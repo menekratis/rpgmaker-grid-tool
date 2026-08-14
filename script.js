@@ -71,6 +71,8 @@ function getGridSettings() {
  * is Canvas's top-left origin, stepping by tile size keeps every cell aligned
  * with RPG Maker's coordinate system. Odd-width strokes use a half-pixel
  * offset so a 1 px line lands on physical pixels instead of being blurred.
+ * The right and bottom boundary strokes are inset by half their width because
+ * Canvas clips any part of a stroke centered exactly on width or height.
  */
 function drawGrid(context, width, height, settings) {
   const { size, opacity, thickness, color } = settings;
@@ -93,6 +95,12 @@ function drawGrid(context, width, height, settings) {
     context.moveTo(0, lineY);
     context.lineTo(width, lineY);
   }
+
+  const boundaryInset = thickness / 2;
+  context.moveTo(width - boundaryInset, 0);
+  context.lineTo(width - boundaryInset, height);
+  context.moveTo(0, height - boundaryInset);
+  context.lineTo(width, height - boundaryInset);
 
   context.stroke();
   context.restore();
