@@ -66,7 +66,7 @@ input:focus-visible {
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .eyebrow {
@@ -118,10 +118,65 @@ h2 {
   box-shadow: 0 0 0 4px rgba(81, 216, 154, 0.09);
 }
 
+
+.workspace-tabs {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.workspace-tab:hover,
+.workspace-tab.is-active {
+  border-color: var(--border);
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.workspace-tab > span {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--border);
+  font-size: 0.58rem;
+}
+
+.workspace-tab.is-active > span {
+  background: var(--accent);
+  color: #fff;
+}
+
+.workspace-tab small {
+  min-width: 18px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-soft);
+  font-size: 0.58rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .app-layout {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
-  height: calc(100vh - 116px);
+  height: calc(100vh - 158px);
   min-height: 560px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -776,6 +831,138 @@ input[type="color"] {
 
 .viewer-footer span:last-child {
   font-variant-numeric: tabular-nums;
+}
+
+
+.selection-count {
+  display: inline-grid;
+  min-width: 23px;
+  height: 20px;
+  padding: 0 6px;
+  place-items: center;
+  border: 1px solid rgba(255, 73, 106, 0.34);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: #ff8da1;
+  font-size: 0.62rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin-top: 11px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #0c1017;
+}
+
+.segment-button {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.segment-button:hover,
+.segment-button.is-active {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.selection-summary {
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.018);
+  line-height: 1.35;
+}
+
+.selection-summary strong,
+.selection-summary span {
+  display: block;
+}
+
+.selection-summary strong {
+  margin-bottom: 3px;
+  color: var(--text);
+  font-size: 0.71rem;
+}
+
+.selection-summary span {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+}
+
+#mapCanvas.is-selecting,
+#tilesetCanvas {
+  cursor: cell;
+  touch-action: none;
+}
+
+.preset-button:disabled,
+input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.builder-stat-row {
+  margin-top: 8px;
+}
+
+.placement-actions {
+  margin-top: 12px;
+}
+
+.placement-actions .button + .button {
+  margin-top: 8px;
+}
+
+.button-danger {
+  border-color: rgba(255, 73, 106, 0.32);
+  background: rgba(255, 73, 106, 0.07);
+  color: #ff8da1;
+}
+
+.button-danger:hover:not(:disabled) {
+  border-color: rgba(255, 73, 106, 0.55);
+  background: rgba(255, 73, 106, 0.13);
+}
+
+#tilesetCanvas {
+  display: block;
+  max-width: none;
+  background: transparent;
+}
+
+.template-icon {
+  color: #d36aff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.builder-layout .alignment-notice {
+  margin-top: 12px;
+}
+
+.builder-layout .status-dot {
+  background: #d36aff;
+}
+
+.builder-layout .canvas-viewport {
+  background-color: #080a0f;
 }
 
 .toast {

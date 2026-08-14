@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A private, browser-only grid checker for RPG Maker MZ map images." />
-    <title>RPG Maker MZ Grid Checker</title>
+    <meta name="description" content="A private, browser-only grid checker and B-E tileset builder for RPG Maker MZ." />
+    <title>RPG Maker MZ Grid &amp; Tileset Tool</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -12,7 +13,7 @@
       <header class="app-header">
         <div>
           <p class="eyebrow">LOCAL MAP UTILITY</p>
-          <h1>RPG Maker MZ Grid Checker</h1>
+          <h1>RPG Maker MZ Grid &amp; Tileset Tool</h1>
         </div>
         <p class="privacy-note" title="The image stays in this browser tab">
           <span class="privacy-dot" aria-hidden="true"></span>
@@ -20,7 +21,16 @@
         </p>
       </header>
 
-      <div class="app-layout">
+      <nav class="workspace-tabs" aria-label="Workspace">
+        <button id="sourceWorkspaceTab" class="workspace-tab is-active" type="button" aria-selected="true">
+          <span>1</span> Source Map
+        </button>
+        <button id="builderWorkspaceTab" class="workspace-tab" type="button" aria-selected="false">
+          <span>2</span> Tileset Builder <small id="builderTabCount">0</small>
+        </button>
+      </nav>
+
+      <div id="sourceWorkspace" class="app-layout">
         <aside class="control-panel" aria-label="Grid controls">
           <section class="panel-section upload-section">
             <div class="section-heading">
@@ -98,6 +108,31 @@
             </label>
           </section>
 
+          <section class="panel-section selection-section" aria-labelledby="tileSelectionHeading">
+            <div class="section-heading">
+              <h2 id="tileSelectionHeading">Tile selection</h2>
+              <span id="selectedTileCount" class="selection-count">0</span>
+            </div>
+            <button id="selectionToggleButton" class="button button-secondary button-wide" type="button" disabled>
+              Enable tile selection
+            </button>
+
+            <div id="selectionControls" hidden>
+              <div class="segmented-control" role="group" aria-label="Selection type">
+                <button id="individualSelectionButton" class="segment-button is-active" type="button">Individual</button>
+                <button id="rectangleSelectionButton" class="segment-button" type="button">Rectangle</button>
+              </div>
+              <div class="selection-summary">
+                <strong id="selectionSummaryTitle">No tiles selected</strong>
+                <span id="selectionSummaryDetail">Click cells to select them in order.</span>
+              </div>
+              <button id="clearSelectionButton" class="button button-secondary button-wide" type="button" disabled>
+                Clear Selection
+              </button>
+              <p class="helper-text">Selections always use original-image 48&times;48 coordinates.</p>
+            </div>
+          </section>
+
           <section class="panel-section export-section" aria-labelledby="exportHeading">
             <h2 id="exportHeading">Export</h2>
             <button id="exportGridButton" class="button button-primary button-wide" type="button" disabled>
@@ -161,6 +196,103 @@
           <footer class="viewer-footer">
             <span id="footerHint">Upload an image to begin</span>
             <span id="gridStatus">Grid 48&times;48 px</span>
+          </footer>
+        </section>
+      </div>
+
+
+      <div id="builderWorkspace" class="app-layout builder-layout" hidden>
+        <aside class="control-panel" aria-label="Tileset builder controls">
+          <section class="panel-section">
+            <div class="section-heading">
+              <h2>Template</h2>
+              <span class="subtle-badge">B&ndash;E</span>
+            </div>
+            <div class="stat-row">
+              <span>Dimensions</span>
+              <strong id="templateDimensions">768 &times; 768 px</strong>
+            </div>
+            <div class="stat-row builder-stat-row">
+              <span>Capacity</span>
+              <strong>16 &times; 16 tiles</strong>
+            </div>
+            <div class="tile-equation">The supplied template defines the canvas. Guide lines are editor-only.</div>
+          </section>
+
+          <section class="panel-section">
+            <div class="section-heading">
+              <h2>Source tiles</h2>
+              <span id="builderSelectedCount" class="selection-count">0</span>
+            </div>
+            <div class="selection-summary">
+              <strong id="builderSelectionTitle">No source selection</strong>
+              <span id="builderSelectionDetail">Select tiles in the Source Map workspace.</span>
+            </div>
+            <button id="backToSourceButton" class="button button-secondary button-wide" type="button">
+              Back to Source Map
+            </button>
+          </section>
+
+          <section class="panel-section">
+            <h2>Placement</h2>
+            <div class="stat-row">
+              <span>Destination</span>
+              <strong id="builderDestination">None</strong>
+            </div>
+            <div class="placement-actions">
+              <button id="placeAtDestinationButton" class="button button-primary button-wide" type="button" disabled>
+                Place at Selected
+              </button>
+              <button id="addNextSlotsButton" class="button button-secondary button-wide" type="button" disabled>
+                Add to Next Slots
+              </button>
+              <button id="removeDestinationButton" class="button button-secondary button-wide" type="button" disabled>
+                Remove Destination Tile
+              </button>
+              <button id="clearTilesetButton" class="button button-danger button-wide" type="button" disabled>
+                Clear Entire Tileset
+              </button>
+            </div>
+            <div id="builderNotice" class="alignment-notice" hidden aria-live="polite"></div>
+          </section>
+
+          <section class="panel-section export-section">
+            <h2>Export</h2>
+            <button id="downloadTilesetButton" class="button button-primary button-wide" type="button" disabled>
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5M5 19.5h14" /></svg>
+              Download Tileset PNG
+            </button>
+            <p class="helper-text">Exact template size, transparent, with no editor overlays.</p>
+          </section>
+        </aside>
+
+        <section class="viewer-panel" aria-label="Tileset builder preview">
+          <div class="viewer-toolbar">
+            <div class="toolbar-title">
+              <span class="status-dot" aria-hidden="true"></span>
+              <span>Tileset B&ndash;E Workspace</span>
+            </div>
+            <div class="zoom-controls" aria-label="Tileset preview zoom">
+              <button id="builderFitButton" class="toolbar-button is-active" type="button" disabled>Fit</button>
+              <button id="builderActualSizeButton" class="toolbar-button" type="button" title="Actual Size" disabled>100%</button>
+              <span id="builderZoomValue" class="zoom-value">&mdash;</span>
+            </div>
+          </div>
+
+          <div id="builderCanvasViewport" class="canvas-viewport">
+            <div id="builderEmptyState" class="empty-state">
+              <div class="empty-icon template-icon" aria-hidden="true">16&times;16</div>
+              <h2>Loading tileset template</h2>
+              <p>The exact supplied B&ndash;E template stays local.</p>
+            </div>
+            <div id="builderCanvasStage" class="canvas-stage" hidden>
+              <canvas id="tilesetCanvas" aria-label="Tileset destination grid"></canvas>
+            </div>
+          </div>
+
+          <footer class="viewer-footer">
+            <span id="builderFooterHint">Select a destination cell to place tiles</span>
+            <span id="builderOccupancy">0 / 256 occupied</span>
           </footer>
         </section>
       </div>
