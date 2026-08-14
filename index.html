@@ -119,8 +119,12 @@
               <span id="viewerTitle">Preview</span>
             </div>
             <div class="zoom-controls" aria-label="Preview zoom">
-              <button id="actualSizeButton" class="toolbar-button is-active" type="button" disabled>100%</button>
               <button id="fitButton" class="toolbar-button" type="button" disabled>Fit</button>
+              <button class="toolbar-button zoom-preset" data-zoom="0.5" type="button" disabled>50%</button>
+              <button class="toolbar-button zoom-preset" data-zoom="0.75" type="button" disabled>75%</button>
+              <button id="actualSizeButton" class="toolbar-button zoom-preset is-active" data-zoom="1" type="button" title="Actual Size" aria-label="Actual Size, 100%" disabled>100%</button>
+              <button class="toolbar-button zoom-preset" data-zoom="1.25" type="button" disabled>125%</button>
+              <button class="toolbar-button zoom-preset" data-zoom="1.5" type="button" disabled>150%</button>
               <span id="zoomValue" class="zoom-value">&mdash;</span>
             </div>
           </div>

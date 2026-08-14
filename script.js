@@ -32,8 +32,8 @@ const elements = {
   pixelCoordinates: document.querySelector("#pixelCoordinates"),
   dragOverlay: document.querySelector("#dragOverlay"),
   viewerTitle: document.querySelector("#viewerTitle"),
-  actualSizeButton: document.querySelector("#actualSizeButton"),
   fitButton: document.querySelector("#fitButton"),
+  zoomPresetButtons: document.querySelectorAll("[data-zoom]"),
   zoomValue: document.querySelector("#zoomValue"),
   footerHint: document.querySelector("#footerHint"),
   gridStatus: document.querySelector("#gridStatus"),
@@ -199,8 +199,8 @@ function loadImageFile(file) {
     [
       elements.exportGridButton,
       elements.exportOriginalButton,
-      elements.actualSizeButton,
       elements.fitButton,
+      ...elements.zoomPresetButtons,
     ].forEach((button) => {
       button.disabled = false;
     });
@@ -241,18 +241,22 @@ function calculateFitZoom() {
 function applyZoom() {
   if (!state.image) return;
 
-  state.zoom = state.fitToViewport ? calculateFitZoom() : 1;
+  if (state.fitToViewport) state.zoom = calculateFitZoom();
   const cssWidth = Math.max(1, Math.round(state.image.naturalWidth * state.zoom));
   const cssHeight = Math.max(1, Math.round(state.image.naturalHeight * state.zoom));
   elements.mapCanvas.style.width = `${cssWidth}px`;
   elements.mapCanvas.style.height = `${cssHeight}px`;
   elements.zoomValue.textContent = `${Math.round(state.zoom * 100)}%`;
-  elements.actualSizeButton.classList.toggle("is-active", !state.fitToViewport);
   elements.fitButton.classList.toggle("is-active", state.fitToViewport);
+  elements.zoomPresetButtons.forEach((button) => {
+    const buttonZoom = Number(button.dataset.zoom);
+    button.classList.toggle("is-active", !state.fitToViewport && buttonZoom === state.zoom);
+  });
 }
 
-function showActualSize() {
+function setPreviewZoom(zoom) {
   state.fitToViewport = false;
+  state.zoom = zoom;
   applyZoom();
 }
 
@@ -414,7 +418,9 @@ elements.gridColor.addEventListener("input", updateColor);
 elements.showPixelCoordinates.addEventListener("change", () => {
   elements.pixelCoordinates.hidden = !elements.showPixelCoordinates.checked;
 });
-elements.actualSizeButton.addEventListener("click", showActualSize);
+elements.zoomPresetButtons.forEach((button) => {
+  button.addEventListener("click", () => setPreviewZoom(Number(button.dataset.zoom)));
+});
 elements.fitButton.addEventListener("click", fitImage);
 elements.mapCanvas.addEventListener("pointermove", showCoordinates);
 elements.mapCanvas.addEventListener("pointerleave", hideCoordinates);

@@ -555,7 +555,15 @@ input[type="color"] {
 .zoom-controls {
   display: flex;
   align-items: center;
+  flex: none;
   gap: 4px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.zoom-controls::-webkit-scrollbar {
+  display: none;
 }
 
 .toolbar-button {
@@ -598,7 +606,11 @@ input[type="color"] {
   overflow: auto;
   min-width: 0;
   min-height: 0;
+  padding: 24px;
   place-items: safe center;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--border-strong) #090c11;
+  scrollbar-gutter: stable;
   background-color: #090c11;
   background-image:
     linear-gradient(45deg, rgba(255, 255, 255, 0.022) 25%, transparent 25%),
@@ -611,6 +623,28 @@ input[type="color"] {
     8px -8px,
     -8px 0;
   background-size: 16px 16px;
+}
+
+.canvas-viewport::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.canvas-viewport::-webkit-scrollbar-track,
+.canvas-viewport::-webkit-scrollbar-corner {
+  background: #090c11;
+}
+
+.canvas-viewport::-webkit-scrollbar-thumb {
+  min-width: 28px;
+  min-height: 28px;
+  border: 3px solid #090c11;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.canvas-viewport::-webkit-scrollbar-thumb:hover {
+  background: #56627a;
 }
 
 .empty-state {
@@ -659,7 +693,7 @@ input[type="color"] {
 
 .canvas-stage {
   position: relative;
-  margin: 24px;
+  margin: 0;
   line-height: 0;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.09),
@@ -827,6 +861,10 @@ input[type="color"] {
   .viewer-toolbar,
   .viewer-footer {
     padding-inline: 10px;
+  }
+
+  .viewer-toolbar .toolbar-title {
+    display: none;
   }
 
   .viewer-footer span:first-child {
