@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A private, browser-only grid checker for RPG Maker MZ map images." />
+    <title>RPG Maker MZ Grid Checker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">LOCAL MAP UTILITY</p>
+          <h1>RPG Maker MZ Grid Checker</h1>
+        </div>
+        <p class="privacy-note" title="The image stays in this browser tab">
+          <span class="privacy-dot" aria-hidden="true"></span>
+          Private &amp; offline
+        </p>
+      </header>
+
+      <div class="app-layout">
+        <aside class="control-panel" aria-label="Grid controls">
+          <section class="panel-section upload-section">
+            <div class="section-heading">
+              <h2>Map image</h2>
+              <span id="fileType" class="subtle-badge" hidden></span>
+            </div>
+            <input id="fileInput" class="visually-hidden" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" />
+            <button id="chooseButton" class="button button-primary button-wide" type="button">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" /></svg>
+              Choose PNG or JPG
+            </button>
+            <p class="helper-text">Or drop an image into the preview area.</p>
+          </section>
+
+          <section class="panel-section" aria-labelledby="imageDetailsHeading">
+            <h2 id="imageDetailsHeading">Image details</h2>
+            <div class="stat-row">
+              <span>Dimensions</span>
+              <strong id="pixelDimensions">No image</strong>
+            </div>
+            <div class="tile-equation" id="tileEquation">Upload a map to inspect it.</div>
+            <div id="alignmentNotice" class="alignment-notice" hidden aria-live="polite"></div>
+          </section>
+
+          <section class="panel-section" aria-labelledby="gridSettingsHeading">
+            <div class="section-heading">
+              <h2 id="gridSettingsHeading">Grid settings</h2>
+              <label class="switch-label" for="gridToggle">
+                <span>Show</span>
+                <input id="gridToggle" type="checkbox" checked />
+                <span class="switch" aria-hidden="true"></span>
+              </label>
+            </div>
+
+            <button id="mzPresetButton" class="preset-button" type="button">
+              <span class="preset-icon" aria-hidden="true">48</span>
+              <span>
+                <strong>RPG Maker MZ 48px</strong>
+                <small>Standard square tile</small>
+              </span>
+              <span class="preset-check" aria-hidden="true">&#10003;</span>
+            </button>
+
+            <label class="field-label" for="gridSize">
+              <span>Grid size</span>
+              <span class="number-input-wrap">
+                <input id="gridSize" type="number" min="1" max="1024" step="1" value="48" inputmode="numeric" />
+                <span>px</span>
+              </span>
+            </label>
+
+            <label class="range-label" for="gridOpacity">
+              <span>Opacity</span>
+              <output id="opacityValue" for="gridOpacity">55%</output>
+              <input id="gridOpacity" type="range" min="5" max="100" step="1" value="55" />
+            </label>
+
+            <label class="range-label" for="lineThickness">
+              <span>Line thickness</span>
+              <output id="thicknessValue" for="lineThickness">1 px</output>
+              <input id="lineThickness" type="range" min="1" max="8" step="1" value="1" />
+            </label>
+
+            <label class="field-label" for="gridColor">
+              <span>Line color</span>
+              <span class="color-input-wrap">
+                <input id="gridColor" type="color" value="#ff496a" />
+                <span id="colorValue">#FF496A</span>
+              </span>
+            </label>
+
+            <label class="check-label" for="showPixelCoordinates">
+              <input id="showPixelCoordinates" type="checkbox" />
+              <span>Show pixel coordinates on hover</span>
+            </label>
+          </section>
+
+          <section class="panel-section export-section" aria-labelledby="exportHeading">
+            <h2 id="exportHeading">Export</h2>
+            <button id="exportGridButton" class="button button-primary button-wide" type="button" disabled>
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5M5 19.5h14" /></svg>
+              Download gridded PNG
+            </button>
+            <button id="exportOriginalButton" class="button button-secondary button-wide" type="button" disabled>
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5M5 19.5h14" /></svg>
+              Download original
+            </button>
+            <p class="helper-text">Exports stay at the image's original resolution.</p>
+          </section>
+        </aside>
+
+        <section id="dropZone" class="viewer-panel" aria-label="Map preview and drop zone">
+          <div class="viewer-toolbar">
+            <div class="toolbar-title">
+              <span class="status-dot" aria-hidden="true"></span>
+              <span id="viewerTitle">Preview</span>
+            </div>
+            <div class="zoom-controls" aria-label="Preview zoom">
+              <button id="actualSizeButton" class="toolbar-button is-active" type="button" disabled>100%</button>
+              <button id="fitButton" class="toolbar-button" type="button" disabled>Fit</button>
+              <span id="zoomValue" class="zoom-value">&mdash;</span>
+            </div>
+          </div>
+
+          <div id="canvasViewport" class="canvas-viewport">
+            <div id="emptyState" class="empty-state">
+              <div class="empty-icon" aria-hidden="true">
+                <svg viewBox="0 0 48 48">
+                  <rect x="7" y="9" width="34" height="30" rx="4" />
+                  <path d="m12 33 8-8 6 6 4-4 6 6M17 20h.01" />
+                </svg>
+              </div>
+              <h2>Drop your map image here</h2>
+              <p>PNG or JPG &middot; processed only in your browser</p>
+              <button id="emptyChooseButton" class="button button-secondary" type="button">Browse files</button>
+            </div>
+
+            <div id="canvasStage" class="canvas-stage" hidden>
+              <canvas id="mapCanvas" aria-label="Uploaded map with grid overlay"></canvas>
+              <div id="coordinateTooltip" class="coordinate-tooltip" hidden>
+                <strong id="tileCoordinates">X:0 Y:0</strong>
+                <span id="pixelCoordinates" hidden>PX:0 PY:0</span>
+              </div>
+            </div>
+
+            <div id="dragOverlay" class="drag-overlay" hidden>
+              <div>
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" /></svg>
+                <strong>Drop to inspect</strong>
+              </div>
+            </div>
+          </div>
+
+          <footer class="viewer-footer">
+            <span id="footerHint">Upload an image to begin</span>
+            <span id="gridStatus">Grid 48&times;48 px</span>
+          </footer>
+        </section>
+      </div>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script src="script.js"></script>
+  </body>
+</html>
