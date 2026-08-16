@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="description" content="A private, browser-only grid checker and B-E tileset builder for RPG Maker MZ." />
     <title>RPG Maker MZ Grid &amp; Tileset Tool</title>
     <link rel="icon" href="data:," />
@@ -55,7 +55,7 @@
             <div id="alignmentNotice" class="alignment-notice" hidden aria-live="polite"></div>
           </section>
 
-          <section class="panel-section" aria-labelledby="gridSettingsHeading">
+          <section class="panel-section" data-collapsible="grid-settings" aria-labelledby="gridSettingsHeading">
             <div class="section-heading">
               <h2 id="gridSettingsHeading">Grid settings</h2>
               <label class="switch-label" for="gridToggle">
@@ -108,7 +108,7 @@
             </label>
           </section>
 
-          <section class="panel-section selection-section" aria-labelledby="tileSelectionHeading">
+          <section class="panel-section selection-section" data-collapsible="tile-selection" aria-labelledby="tileSelectionHeading">
             <div class="section-heading">
               <h2 id="tileSelectionHeading">Tile selection</h2>
               <span id="selectedTileCount" class="selection-count">0</span>
@@ -133,7 +133,7 @@
             </div>
           </section>
 
-          <section class="panel-section capture-section" aria-labelledby="manualCaptureHeading">
+          <section class="panel-section capture-section" data-collapsible="manual-capture" aria-labelledby="manualCaptureHeading">
             <div class="section-heading">
               <h2 id="manualCaptureHeading">Manual tile capture</h2>
               <span id="captureOutputBadge" class="subtle-badge">1&times;1</span>
@@ -192,7 +192,7 @@
             </div>
           </section>
 
-          <section class="panel-section export-section" aria-labelledby="exportHeading">
+          <section class="panel-section export-section" data-collapsible="source-export" aria-labelledby="exportHeading">
             <h2 id="exportHeading">Export</h2>
             <button id="exportGridButton" class="button button-primary button-wide" type="button" disabled>
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5M5 19.5h14" /></svg>

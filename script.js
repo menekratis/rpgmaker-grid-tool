@@ -122,6 +122,19 @@ const captureState = {
   dragOffsetY: 0,
 };
 
+const panState = {
+  spaceHeld: false,
+  active: false,
+  pointerId: null,
+  viewport: null,
+  startClientX: 0,
+  startClientY: 0,
+  startScrollLeft: 0,
+  startScrollTop: 0,
+  moved: false,
+  suppressClick: false,
+};
+
 const builderState = {
   templateImage: null,
   width: 0,
@@ -140,6 +153,151 @@ const tilesetContext = elements.tilesetCanvas.getContext("2d");
 function clampInteger(value, minimum, maximum, fallback) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? Math.min(maximum, Math.max(minimum, parsed)) : fallback;
+}
+
+function getSavedSectionCollapsed(key, fallback) {
+  try {
+    const stored = window.localStorage.getItem("rpgmz-section-" + key);
+    return stored === null ? fallback : stored === "collapsed";
+  } catch {
+    return fallback;
+  }
+}
+
+function saveSectionCollapsed(key, collapsed) {
+  try {
+    window.localStorage.setItem("rpgmz-section-" + key, collapsed ? "collapsed" : "open");
+  } catch {
+    // The app remains fully usable when browser storage is unavailable.
+  }
+}
+
+function setSectionCollapsed(section, collapsed, { persist = true } = {}) {
+  const button = section.querySelector(".section-collapse-button");
+  const body = section.querySelector(".collapsible-section-body");
+  if (!button || !body) return;
+  section.classList.toggle("is-collapsed", collapsed);
+  body.hidden = collapsed;
+  button.setAttribute("aria-expanded", String(!collapsed));
+  button.title = collapsed ? "Expand section" : "Collapse section";
+  if (persist) saveSectionCollapsed(section.dataset.collapsible, collapsed);
+}
+
+function initializeCollapsibleSections() {
+  document.querySelectorAll("[data-collapsible]").forEach((section) => {
+    let heading = section.querySelector(":scope > .section-heading");
+    const title = section.querySelector(":scope > h2, :scope > .section-heading > h2");
+    if (!title) return;
+
+    if (!heading) {
+      heading = document.createElement("div");
+      heading.className = "section-heading";
+      section.insertBefore(heading, title);
+      heading.append(title);
+    }
+
+    const titleText = title.textContent.trim();
+    const button = document.createElement("button");
+    button.className = "section-collapse-button";
+    button.type = "button";
+    button.innerHTML = '<span>' + titleText + '</span><span class="section-chevron" aria-hidden="true">⌄</span>';
+    title.textContent = "";
+    title.append(button);
+
+    const body = document.createElement("div");
+    body.className = "collapsible-section-body";
+    body.id = "collapsible-" + section.dataset.collapsible;
+    button.setAttribute("aria-controls", body.id);
+    while (heading.nextSibling) body.append(heading.nextSibling);
+    section.append(body);
+
+    const collapsed = getSavedSectionCollapsed(section.dataset.collapsible, section.dataset.collapsible !== "grid-settings");
+    setSectionCollapsed(section, collapsed, { persist: false });
+    button.addEventListener("click", () => setSectionCollapsed(section, !section.classList.contains("is-collapsed")));
+  });
+}
+
+function isEditableControl(target) {
+  return target instanceof Element && Boolean(target.closest("input, select, textarea, [contenteditable='true']"));
+}
+
+function isPanIntent(event) {
+  return panState.active || panState.suppressClick || event.button === 1 || (event.button === 0 && panState.spaceHeld);
+}
+
+function setPanReady(ready) {
+  [elements.canvasViewport, elements.builderCanvasViewport].forEach((viewport) => {
+    viewport.classList.toggle("is-pan-ready", ready);
+  });
+}
+
+function beginViewportPan(event) {
+  if (panState.active) return;
+  const viewport = event.currentTarget;
+  const backgroundDrag = event.button === 0 && event.target === viewport;
+  const shortcutDrag = event.button === 1 || (event.button === 0 && panState.spaceHeld);
+  if (!backgroundDrag && !shortcutDrag) return;
+
+  panState.active = true;
+  panState.pointerId = event.pointerId;
+  panState.viewport = viewport;
+  panState.startClientX = event.clientX;
+  panState.startClientY = event.clientY;
+  panState.startScrollLeft = viewport.scrollLeft;
+  panState.startScrollTop = viewport.scrollTop;
+  panState.moved = false;
+  viewport.classList.add("is-panning");
+  viewport.setPointerCapture(event.pointerId);
+  hideCoordinates();
+  event.preventDefault();
+}
+
+function moveViewportPan(event) {
+  if (!panState.active || panState.pointerId !== event.pointerId || panState.viewport !== event.currentTarget) return;
+  panState.viewport.scrollLeft = panState.startScrollLeft - (event.clientX - panState.startClientX);
+  panState.viewport.scrollTop = panState.startScrollTop - (event.clientY - panState.startClientY);
+  if (Math.abs(event.clientX - panState.startClientX) > 3 || Math.abs(event.clientY - panState.startClientY) > 3) {
+    panState.moved = true;
+  }
+  event.preventDefault();
+}
+
+function finishViewportPan(event) {
+  if (!panState.active || panState.pointerId !== event.pointerId || panState.viewport !== event.currentTarget) return;
+  const viewport = panState.viewport;
+  panState.active = false;
+  panState.pointerId = null;
+  panState.viewport = null;
+  if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
+  viewport.classList.remove("is-panning");
+  if (panState.moved) {
+    panState.suppressClick = true;
+    window.setTimeout(() => { panState.suppressClick = false; }, 0);
+  }
+  event.preventDefault();
+}
+
+function handleGlobalKeyDown(event) {
+  const zoomKey = ["+", "-", "=", "0"].includes(event.key);
+  if ((event.ctrlKey || event.metaKey) && zoomKey) {
+    event.preventDefault();
+    return;
+  }
+  if (event.code === "Space" && !isEditableControl(event.target)) {
+    panState.spaceHeld = true;
+    setPanReady(true);
+    event.preventDefault();
+  }
+}
+
+function handleGlobalKeyUp(event) {
+  if (event.code !== "Space") return;
+  panState.spaceHeld = false;
+  setPanReady(false);
+}
+
+function preventControlWheelZoom(event) {
+  if (event.ctrlKey || event.metaKey) event.preventDefault();
 }
 
 function getGridSettings() {
@@ -288,7 +446,7 @@ function loadImageFile(file) {
       file.type === "image/png" || /\.png$/i.test(file.name) ? "PNG" : "JPG";
     elements.viewerTitle.textContent = file.name;
     elements.footerHint.textContent =
-      "Hover for tile coordinates \u00B7 top-left is X:0 Y:0";
+      "Hover for coordinates \u00B7 hold Space or middle-drag to pan";
 
     [
       elements.exportGridButton,
@@ -366,7 +524,7 @@ function fitImage() {
  */
 function showCoordinates(event) {
   if (!state.image) return;
-  if (captureState.enabled) {
+  if (captureState.enabled || panState.active || panState.spaceHeld) {
     hideCoordinates();
     return;
   }
@@ -766,6 +924,7 @@ function setCaptureEnabled(enabled) {
 }
 
 function beginCaptureDrag(event) {
+  if (isPanIntent(event)) return false;
   if (!captureState.enabled || !state.image) return false;
   const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
   const rect = getCaptureRect();
@@ -786,6 +945,7 @@ function beginCaptureDrag(event) {
 }
 
 function moveCaptureDrag(event) {
+  if (panState.active) return false;
   if (!captureState.enabled || !captureState.dragging || captureState.pointerId !== event.pointerId) return false;
   const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
   captureState.centerX = pixel.x - captureState.dragOffsetX;
@@ -809,6 +969,7 @@ function finishCaptureDrag(event) {
 
 function zoomCaptureAtPointer(event) {
   if (!captureState.enabled || !state.image) return;
+  if (event.ctrlKey || event.metaKey) return;
   event.preventDefault();
   const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
   const factor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
@@ -958,6 +1119,7 @@ function setSelectionType(type) {
 
 function handleSourcePointerDown(event) {
   if (beginCaptureDrag(event)) return;
+  if (isPanIntent(event)) return;
   if (!selectionState.enabled || !state.image) return;
   const tile = getSourceTileFromEvent(event);
   if (!tile) {
@@ -981,6 +1143,7 @@ function handleSourcePointerDown(event) {
 
 function handleSourceSelectionDrag(event) {
   if (moveCaptureDrag(event)) return;
+  if (panState.active) return;
   if (!selectionState.enabled || selectionState.type !== "rectangle" || !selectionState.dragStart) return;
   const tile = getSourceTileFromEvent(event);
   if (!tile) return;
@@ -1306,6 +1469,7 @@ function addToNextAvailableSlots() {
 }
 
 function selectBuilderDestination(event) {
+  if (isPanIntent(event)) return;
   if (!builderState.templateImage) return;
   const pixel = getCanvasPixelCoordinates(elements.tilesetCanvas, event);
   const x = Math.floor(pixel.x / MZ_TILE_SIZE);
@@ -1420,6 +1584,16 @@ elements.builderActualSizeButton.addEventListener("click", () => {
   applyBuilderZoom();
 });
 
+[elements.canvasViewport, elements.builderCanvasViewport].forEach((viewport) => {
+  viewport.addEventListener("pointerdown", beginViewportPan);
+  viewport.addEventListener("pointermove", moveViewportPan);
+  viewport.addEventListener("pointerup", finishViewportPan);
+  viewport.addEventListener("pointercancel", finishViewportPan);
+  viewport.addEventListener("auxclick", (event) => {
+    if (event.button === 1) event.preventDefault();
+  });
+});
+
 ["dragenter", "dragover"].forEach((eventName) => {
   elements.dropZone.addEventListener(eventName, (event) => {
     event.preventDefault();
@@ -1447,10 +1621,20 @@ window.addEventListener("resize", () => {
   if (builderState.fitToViewport) applyBuilderZoom();
 });
 
+window.addEventListener("keydown", handleGlobalKeyDown, { capture: true });
+window.addEventListener("keyup", handleGlobalKeyUp, { capture: true });
+window.addEventListener("wheel", preventControlWheelZoom, { capture: true, passive: false });
+window.addEventListener("gesturestart", (event) => event.preventDefault(), { passive: false });
+window.addEventListener("blur", () => {
+  panState.spaceHeld = false;
+  setPanReady(false);
+});
+
 window.addEventListener("beforeunload", () => {
   if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
 });
 
+initializeCollapsibleSections();
 updateGridStatus();
 updateSelectionUi();
 updateCaptureUi();

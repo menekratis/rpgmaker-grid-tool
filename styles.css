@@ -211,7 +211,48 @@ h2 {
 }
 
 .section-heading h2 {
+  flex: 1;
   margin: 0;
+}
+
+.section-collapse-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.section-chevron {
+  display: inline-block;
+  color: var(--text-dim);
+  font-size: 0.86rem;
+  transition: transform 140ms ease;
+}
+
+.panel-section.is-collapsed .section-chevron {
+  transform: rotate(-90deg);
+}
+
+.collapsible-section-body {
+  min-width: 0;
+}
+
+.collapsible-section-body[hidden] {
+  display: none;
+}
+
+.panel-section.is-collapsed .section-heading {
+  margin-bottom: 0;
 }
 
 .subtle-badge {
@@ -683,8 +724,8 @@ input[type="color"] {
 }
 
 .canvas-viewport::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 15px;
+  height: 15px;
 }
 
 .canvas-viewport::-webkit-scrollbar-track,
@@ -693,11 +734,24 @@ input[type="color"] {
 }
 
 .canvas-viewport::-webkit-scrollbar-thumb {
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 34px;
+  min-height: 34px;
   border: 3px solid #090c11;
   border-radius: 999px;
   background: var(--border-strong);
+}
+
+.canvas-viewport.is-pan-ready,
+.canvas-viewport.is-pan-ready #mapCanvas,
+.canvas-viewport.is-pan-ready #tilesetCanvas {
+  cursor: grab;
+}
+
+.canvas-viewport.is-panning,
+.canvas-viewport.is-panning #mapCanvas,
+.canvas-viewport.is-panning #tilesetCanvas {
+  cursor: grabbing !important;
+  user-select: none;
 }
 
 .canvas-viewport::-webkit-scrollbar-thumb:hover {
