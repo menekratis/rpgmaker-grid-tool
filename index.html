@@ -53,6 +53,15 @@
             </div>
             <div class="tile-equation" id="tileEquation">Upload a map to inspect it.</div>
             <div id="alignmentNotice" class="alignment-notice" hidden aria-live="polite"></div>
+            <div class="compact-actions image-fit-actions">
+              <button id="autoFitImageButton" class="button button-secondary button-wide" type="button" disabled>
+                Auto Fit Image to 48px Grid
+              </button>
+              <button id="restoreImageSizeButton" class="button button-quiet button-wide" type="button" hidden>
+                Restore Uploaded Size
+              </button>
+            </div>
+            <p id="autoFitImageHint" class="helper-text">Padding and small crops are preferred so the artwork stays sharp.</p>
           </section>
 
           <section class="panel-section" data-collapsible="grid-settings" aria-labelledby="gridSettingsHeading">
@@ -135,14 +144,81 @@
 
           <section class="panel-section capture-section" data-collapsible="manual-capture" aria-labelledby="manualCaptureHeading">
             <div class="section-heading">
-              <h2 id="manualCaptureHeading">Manual tile capture</h2>
+              <h2 id="manualCaptureHeading">Object capture</h2>
               <span id="captureOutputBadge" class="subtle-badge">1&times;1</span>
             </div>
             <button id="captureToggleButton" class="button button-secondary button-wide" type="button" disabled>
-              Enable manual capture
+              Start Object Capture
             </button>
 
             <div id="captureControls" hidden>
+              <div class="workflow-step">
+                <span class="step-number">1</span>
+                <div>
+                  <strong>Select the artwork</strong>
+                  <span id="captureModeHint">Move and resize a tile-shaped frame.</span>
+                </div>
+              </div>
+
+              <div class="segmented-control capture-mode-control" role="group" aria-label="Object selection method">
+                <button id="captureFrameModeButton" class="segment-button is-active" type="button">Frame</button>
+                <button id="captureRectangleModeButton" class="segment-button" type="button">Rectangle</button>
+                <button id="captureLassoModeButton" class="segment-button" type="button">Lasso</button>
+              </div>
+
+              <div id="maskControls" class="mask-controls" hidden>
+                <div class="tool-strip" role="group" aria-label="Mask tools">
+                  <button id="maskRedrawButton" class="tool-button is-active" type="button">Draw</button>
+                  <button id="maskEraseButton" class="tool-button" type="button" disabled>Erase</button>
+                  <button id="maskRestoreButton" class="tool-button" type="button" disabled>Restore</button>
+                  <button id="maskBackgroundButton" class="tool-button" type="button" disabled>Remove BG</button>
+                </div>
+
+                <div id="brushSizeControl" class="conditional-control" hidden>
+                  <label class="range-label" for="maskBrushSize">
+                    <span>Brush size</span>
+                    <output id="maskBrushSizeValue" for="maskBrushSize">24 px</output>
+                    <input id="maskBrushSize" type="range" min="4" max="120" step="2" value="24" />
+                  </label>
+                </div>
+
+                <div id="backgroundToleranceControl" class="conditional-control" hidden>
+                  <label class="range-label" for="maskTolerance">
+                    <span>Background tolerance</span>
+                    <output id="maskToleranceValue" for="maskTolerance">32</output>
+                    <input id="maskTolerance" type="range" min="4" max="100" step="1" value="32" />
+                  </label>
+                  <p class="helper-text">Click a connected background area. Increase only if some background remains.</p>
+                </div>
+
+                <div class="compact-actions two-column-actions">
+                  <button id="maskUndoButton" class="button button-quiet" type="button" disabled>Undo Mask</button>
+                  <button id="maskResetButton" class="button button-quiet" type="button" disabled>Reset Mask</button>
+                </div>
+
+                <details class="advanced-options">
+                  <summary>Edge cleanup</summary>
+                  <label class="range-label" for="maskEdgeExpand">
+                    <span>Expand / shrink</span>
+                    <output id="maskEdgeExpandValue" for="maskEdgeExpand">0 px</output>
+                    <input id="maskEdgeExpand" type="range" min="-3" max="3" step="1" value="0" />
+                  </label>
+                  <label class="range-label" for="maskFeather">
+                    <span>Edge softness</span>
+                    <output id="maskFeatherValue" for="maskFeather">0 px</output>
+                    <input id="maskFeather" type="range" min="0" max="4" step="1" value="0" />
+                  </label>
+                </details>
+              </div>
+
+              <div class="workflow-step second-step">
+                <span class="step-number">2</span>
+                <div>
+                  <strong>Fit it into tiles</strong>
+                  <span>Proportions stay locked unless Stretch is chosen.</span>
+                </div>
+              </div>
+
               <div class="capture-dimensions" aria-label="Captured tile dimensions">
                 <label for="captureColumns">
                   <span>Tiles wide</span>
@@ -157,6 +233,20 @@
                   </span>
                 </label>
               </div>
+
+              <label class="field-label capture-method-label" for="capturePlacementMode">
+                <span>Placement</span>
+                <select id="capturePlacementMode">
+                  <option value="fit">Fit (recommended)</option>
+                  <option value="original">Original size</option>
+                  <option value="fill">Fill and crop</option>
+                  <option value="stretch">Stretch</option>
+                </select>
+              </label>
+
+              <button id="autoFitObjectButton" class="button button-secondary button-wide" type="button" disabled>
+                Auto Fit Object to Tiles
+              </button>
 
               <label class="field-label capture-method-label" for="captureResizeMethod">
                 <span>Resize method</span>
@@ -175,11 +265,12 @@
               <div class="capture-preview-wrap">
                 <canvas id="capturePreviewCanvas" width="48" height="48" aria-label="Captured tile preview"></canvas>
               </div>
-              <div id="captureQualityNotice" class="tile-equation">Drag the frame over the image to choose a tile.</div>
+              <p class="preview-drag-hint">Drag the preview to position the object inside its tile area.</p>
+              <div id="captureQualityNotice" class="tile-equation">Move the frame over the image to choose artwork.</div>
 
               <div class="capture-actions">
                 <button id="captureResetButton" class="button button-secondary button-wide" type="button">
-                  Center &amp; Reset Scale
+                  Reset Position &amp; Scale
                 </button>
                 <button id="capturePlaceSelectedButton" class="button button-primary button-wide" type="button" disabled>
                   Place at Builder Selection
@@ -188,7 +279,7 @@
                   Add to Next Empty Region
                 </button>
               </div>
-              <p class="helper-text">Drag the frame to move through the source. Use the mouse wheel over the image to resize the object.</p>
+              <p class="helper-text">The object is resized once as a whole, then split into 48&times;48 tiles during placement.</p>
             </div>
           </section>
 

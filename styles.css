@@ -57,7 +57,7 @@ select:focus-visible {
 }
 
 .app-shell {
-  width: min(1500px, 100%);
+  width: min(1780px, 100%);
   min-height: 100vh;
   margin: 0 auto;
   padding: 26px clamp(16px, 3vw, 40px) 32px;
@@ -177,7 +177,7 @@ h2 {
 
 .app-layout {
   display: grid;
-  grid-template-columns: 292px minmax(0, 1fr);
+  grid-template-columns: 356px minmax(0, 1fr);
   height: calc(100vh - 158px);
   min-height: 560px;
   overflow: hidden;
@@ -986,7 +986,7 @@ input[type="color"] {
 }
 
 .capture-method-label select {
-  min-width: 104px;
+  min-width: 144px;
   height: 31px;
   padding: 0 26px 0 9px;
   border: 1px solid var(--border);
@@ -997,7 +997,7 @@ input[type="color"] {
 
 .capture-preview-wrap {
   display: grid;
-  min-height: 116px;
+  min-height: 150px;
   margin-top: 14px;
   padding: 10px;
   overflow: auto;
@@ -1017,9 +1017,22 @@ input[type="color"] {
 #capturePreviewCanvas {
   display: block;
   max-width: 100%;
-  max-height: 190px;
+  max-height: 260px;
   border: 1px solid rgba(255, 255, 255, 0.13);
   image-rendering: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+#capturePreviewCanvas:active {
+  cursor: grabbing;
+}
+
+.preview-drag-hint {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 0.61rem;
+  text-align: center;
 }
 
 #capturePreviewCanvas.is-pixel-art {
@@ -1109,6 +1122,14 @@ input[type="color"] {
   cursor: grab;
 }
 
+#mapCanvas.is-capturing.is-mask-drawing {
+  cursor: crosshair;
+}
+
+#mapCanvas.is-capturing.is-mask-brushing {
+  cursor: none;
+}
+
 #mapCanvas.is-capture-dragging {
   cursor: grabbing;
 }
@@ -1146,6 +1167,139 @@ input:disabled {
 .button-danger:hover:not(:disabled) {
   border-color: rgba(255, 73, 106, 0.55);
   background: rgba(255, 73, 106, 0.13);
+}
+
+.button-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-soft);
+}
+
+.button-quiet:hover:not(:disabled) {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text);
+}
+
+.compact-actions {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.two-column-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.image-fit-actions {
+  margin-top: 12px;
+}
+
+.workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 3px 0 10px;
+}
+
+.workflow-step.second-step {
+  margin-top: 17px;
+}
+
+.workflow-step > div,
+.workflow-step strong,
+.workflow-step span:not(.step-number) {
+  display: block;
+}
+
+.workflow-step strong {
+  margin-bottom: 2px;
+  font-size: 0.72rem;
+}
+
+.workflow-step span:not(.step-number) {
+  color: var(--text-dim);
+  font-size: 0.63rem;
+  line-height: 1.35;
+}
+
+.step-number {
+  display: grid;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(87, 212, 255, 0.35);
+  border-radius: 50%;
+  color: #8fe3ff;
+  background: rgba(87, 212, 255, 0.08);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.capture-mode-control {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.mask-controls {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.tool-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.tool-button {
+  min-width: 0;
+  min-height: 31px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  background: #0c1017;
+  font-size: 0.62rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.tool-button:hover:not(:disabled),
+.tool-button.is-active {
+  border-color: rgba(87, 212, 255, 0.42);
+  color: #dff8ff;
+  background: rgba(87, 212, 255, 0.09);
+}
+
+.tool-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.conditional-control {
+  margin-top: 9px;
+}
+
+.advanced-options {
+  margin-top: 9px;
+  border-top: 1px solid var(--border);
+}
+
+.advanced-options summary {
+  padding-top: 9px;
+  color: var(--text-dim);
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.advanced-options[open] summary {
+  margin-bottom: 4px;
+  color: var(--text-soft);
 }
 
 #tilesetCanvas {
