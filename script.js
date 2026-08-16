@@ -53,6 +53,19 @@ const elements = {
   selectionSummaryTitle: document.querySelector("#selectionSummaryTitle"),
   selectionSummaryDetail: document.querySelector("#selectionSummaryDetail"),
   clearSelectionButton: document.querySelector("#clearSelectionButton"),
+  captureToggleButton: document.querySelector("#captureToggleButton"),
+  captureControls: document.querySelector("#captureControls"),
+  captureOutputBadge: document.querySelector("#captureOutputBadge"),
+  captureColumns: document.querySelector("#captureColumns"),
+  captureRows: document.querySelector("#captureRows"),
+  captureResizeMethod: document.querySelector("#captureResizeMethod"),
+  captureScale: document.querySelector("#captureScale"),
+  captureScaleValue: document.querySelector("#captureScaleValue"),
+  capturePreviewCanvas: document.querySelector("#capturePreviewCanvas"),
+  captureQualityNotice: document.querySelector("#captureQualityNotice"),
+  captureResetButton: document.querySelector("#captureResetButton"),
+  capturePlaceSelectedButton: document.querySelector("#capturePlaceSelectedButton"),
+  captureAddNextButton: document.querySelector("#captureAddNextButton"),
   builderSelectedCount: document.querySelector("#builderSelectedCount"),
   builderSelectionTitle: document.querySelector("#builderSelectionTitle"),
   builderSelectionDetail: document.querySelector("#builderSelectionDetail"),
@@ -94,6 +107,19 @@ const selectionState = {
   rectangle: null,
   dragStart: null,
   dragPreview: null,
+};
+
+const captureState = {
+  enabled: false,
+  columns: 1,
+  rows: 1,
+  scale: 1,
+  centerX: 0,
+  centerY: 0,
+  dragging: false,
+  pointerId: null,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
 };
 
 const builderState = {
@@ -186,6 +212,7 @@ function renderPreview() {
   }
 
   drawSourceSelectionOverlay(displayContext);
+  drawCaptureOverlay(displayContext);
 }
 
 function formatTileCount(pixels) {
@@ -250,7 +277,10 @@ function loadImageFile(file) {
     elements.mapCanvas.height = height;
     clearSourceSelection();
     setSelectionEnabled(false);
+    setCaptureEnabled(false);
+    resetCapturePosition();
     elements.selectionToggleButton.disabled = false;
+    elements.captureToggleButton.disabled = false;
     elements.emptyState.hidden = true;
     elements.canvasStage.hidden = false;
     elements.fileType.hidden = false;
@@ -336,6 +366,10 @@ function fitImage() {
  */
 function showCoordinates(event) {
   if (!state.image) return;
+  if (captureState.enabled) {
+    hideCoordinates();
+    return;
+  }
 
   const rect = elements.mapCanvas.getBoundingClientRect();
   const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
@@ -475,6 +509,312 @@ function getCanvasPixelCoordinates(canvas, event) {
   };
 }
 
+function getCaptureOutputSize() {
+  return {
+    width: captureState.columns * MZ_TILE_SIZE,
+    height: captureState.rows * MZ_TILE_SIZE,
+  };
+}
+
+function getMinimumCaptureScale() {
+  if (!state.image) return .1;
+  const output = getCaptureOutputSize();
+  return Math.max(.1, output.width / state.image.naturalWidth, output.height / state.image.naturalHeight);
+}
+
+function clampCapturePosition() {
+  if (!state.image) return;
+  const output = getCaptureOutputSize();
+  const sourceWidth = output.width / captureState.scale;
+  const sourceHeight = output.height / captureState.scale;
+  const halfWidth = sourceWidth / 2;
+  const halfHeight = sourceHeight / 2;
+  captureState.centerX = Math.min(state.image.naturalWidth - halfWidth, Math.max(halfWidth, captureState.centerX));
+  captureState.centerY = Math.min(state.image.naturalHeight - halfHeight, Math.max(halfHeight, captureState.centerY));
+}
+
+function getCaptureRect() {
+  const output = getCaptureOutputSize();
+  const width = output.width / captureState.scale;
+  const height = output.height / captureState.scale;
+  return {
+    x: captureState.centerX - width / 2,
+    y: captureState.centerY - height / 2,
+    width,
+    height,
+  };
+}
+
+function setCaptureScale(nextScale, anchor = null) {
+  if (!state.image) return;
+  const oldRect = getCaptureRect();
+  const minimum = getMinimumCaptureScale();
+  const maximum = Math.max(8, minimum);
+  const normalizedX = anchor ? (anchor.x - oldRect.x) / oldRect.width : .5;
+  const normalizedY = anchor ? (anchor.y - oldRect.y) / oldRect.height : .5;
+  captureState.scale = Math.min(maximum, Math.max(minimum, nextScale));
+
+  if (anchor) {
+    const output = getCaptureOutputSize();
+    const nextWidth = output.width / captureState.scale;
+    const nextHeight = output.height / captureState.scale;
+    captureState.centerX = anchor.x + (.5 - normalizedX) * nextWidth;
+    captureState.centerY = anchor.y + (.5 - normalizedY) * nextHeight;
+  }
+
+  clampCapturePosition();
+  updateCaptureUi();
+  renderPreview();
+}
+
+function resetCapturePosition() {
+  if (!state.image) return;
+  captureState.centerX = state.image.naturalWidth / 2;
+  captureState.centerY = state.image.naturalHeight / 2;
+  captureState.scale = Math.max(1, getMinimumCaptureScale());
+  clampCapturePosition();
+  updateCaptureUi();
+  renderPreview();
+}
+
+function updateCaptureDimensions() {
+  captureState.columns = clampInteger(elements.captureColumns.value, 1, 16, 1);
+  captureState.rows = clampInteger(elements.captureRows.value, 1, 16, 1);
+  elements.captureColumns.value = captureState.columns;
+  elements.captureRows.value = captureState.rows;
+  const minimum = getMinimumCaptureScale();
+  if (captureState.scale < minimum) captureState.scale = minimum;
+  clampCapturePosition();
+  updateCaptureUi();
+  renderPreview();
+}
+
+function previewCaptureDimensions() {
+  const columns = Number.parseInt(elements.captureColumns.value, 10);
+  const rows = Number.parseInt(elements.captureRows.value, 10);
+  if (!Number.isInteger(columns) || !Number.isInteger(rows) || columns < 1 || columns > 16 || rows < 1 || rows > 16) {
+    return;
+  }
+  captureState.columns = columns;
+  captureState.rows = rows;
+  const minimum = getMinimumCaptureScale();
+  if (captureState.scale < minimum) captureState.scale = minimum;
+  clampCapturePosition();
+  updateCaptureUi();
+  renderPreview();
+}
+
+function drawCaptureOverlay(context) {
+  if (!captureState.enabled || !state.image) return;
+  const rect = getCaptureRect();
+  const width = state.image.naturalWidth;
+  const height = state.image.naturalHeight;
+
+  context.save();
+  context.fillStyle = "rgba(2, 5, 10, .58)";
+  context.fillRect(0, 0, width, Math.max(0, rect.y));
+  context.fillRect(0, rect.y + rect.height, width, Math.max(0, height - rect.y - rect.height));
+  context.fillRect(0, rect.y, Math.max(0, rect.x), rect.height);
+  context.fillRect(rect.x + rect.width, rect.y, Math.max(0, width - rect.x - rect.width), rect.height);
+
+  context.strokeStyle = "#57d4ff";
+  context.lineWidth = Math.max(2, Math.min(rect.width, rect.height) / 60);
+  context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+  context.beginPath();
+  context.lineWidth = 1;
+  context.globalAlpha = .88;
+  for (let column = 1; column < captureState.columns; column += 1) {
+    const x = rect.x + rect.width * column / captureState.columns;
+    context.moveTo(x, rect.y);
+    context.lineTo(x, rect.y + rect.height);
+  }
+  for (let row = 1; row < captureState.rows; row += 1) {
+    const y = rect.y + rect.height * row / captureState.rows;
+    context.moveTo(rect.x, y);
+    context.lineTo(rect.x + rect.width, y);
+  }
+  context.stroke();
+
+  const label = captureState.columns + "\u00D7" + captureState.rows + " tiles \u00B7 " + Math.round(captureState.scale * 100) + "%";
+  context.globalAlpha = 1;
+  context.font = "bold 13px sans-serif";
+  const labelWidth = context.measureText(label).width + 14;
+  const labelX = Math.min(width - labelWidth, Math.max(0, rect.x));
+  const labelY = rect.y >= 27 ? rect.y - 25 : Math.min(height - 23, rect.y + 4);
+  context.fillStyle = "rgba(7, 16, 25, .9)";
+  context.fillRect(labelX, labelY, labelWidth, 21);
+  context.fillStyle = "#dff8ff";
+  context.textBaseline = "middle";
+  context.fillText(label, labelX + 7, labelY + 11);
+  context.restore();
+}
+
+function drawHighQualityRegion(context, image, sourceRect, outputWidth, outputHeight) {
+  const sourceWidth = Math.max(1, Math.round(sourceRect.width));
+  const sourceHeight = Math.max(1, Math.round(sourceRect.height));
+  let working = document.createElement("canvas");
+  working.width = sourceWidth;
+  working.height = sourceHeight;
+  let workingContext = working.getContext("2d");
+  workingContext.imageSmoothingEnabled = true;
+  workingContext.imageSmoothingQuality = "high";
+  workingContext.drawImage(
+    image,
+    sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height,
+    0, 0, sourceWidth, sourceHeight,
+  );
+
+  while (working.width / 2 > outputWidth && working.height / 2 > outputHeight) {
+    const next = document.createElement("canvas");
+    next.width = Math.max(outputWidth, Math.round(working.width / 2));
+    next.height = Math.max(outputHeight, Math.round(working.height / 2));
+    const nextContext = next.getContext("2d");
+    nextContext.imageSmoothingEnabled = true;
+    nextContext.imageSmoothingQuality = "high";
+    nextContext.drawImage(working, 0, 0, next.width, next.height);
+    working = next;
+    workingContext = nextContext;
+  }
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(working, 0, 0, working.width, working.height, 0, 0, outputWidth, outputHeight);
+}
+
+function renderCapturedRegion() {
+  const canvas = document.createElement("canvas");
+  if (!state.image) return canvas;
+  const output = getCaptureOutputSize();
+  const sourceRect = getCaptureRect();
+  canvas.width = output.width;
+  canvas.height = output.height;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, output.width, output.height);
+
+  if (elements.captureResizeMethod.value === "pixel-art") {
+    context.imageSmoothingEnabled = false;
+    context.drawImage(
+      state.image,
+      sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height,
+      0, 0, output.width, output.height,
+    );
+  } else {
+    drawHighQualityRegion(context, state.image, sourceRect, output.width, output.height);
+  }
+
+  return canvas;
+}
+
+function renderCapturePreview() {
+  if (!state.image) return;
+  const captured = renderCapturedRegion();
+  const preview = elements.capturePreviewCanvas;
+  preview.width = captured.width;
+  preview.height = captured.height;
+  const context = preview.getContext("2d");
+  context.imageSmoothingEnabled = elements.captureResizeMethod.value !== "pixel-art";
+  context.imageSmoothingQuality = "high";
+  context.drawImage(captured, 0, 0);
+  preview.classList.toggle("is-pixel-art", elements.captureResizeMethod.value === "pixel-art");
+}
+
+function updateCaptureUi() {
+  const output = getCaptureOutputSize();
+  elements.captureOutputBadge.textContent = captureState.columns + "\u00D7" + captureState.rows;
+  const minimumPercent = Math.max(10, Math.ceil(getMinimumCaptureScale() * 100));
+  const maximumPercent = Math.max(800, minimumPercent);
+  elements.captureScale.min = String(minimumPercent);
+  elements.captureScale.max = String(maximumPercent);
+  elements.captureScale.value = String(Math.round(captureState.scale * 100));
+  elements.captureScaleValue.textContent = Math.round(captureState.scale * 100) + "%";
+  elements.capturePlaceSelectedButton.disabled =
+    !captureState.enabled || !builderState.templateImage || builderState.destination === null;
+  elements.captureAddNextButton.disabled = !captureState.enabled || !builderState.templateImage;
+
+  if (!state.image) return;
+  const sourceRect = getCaptureRect();
+  const scalePercent = Math.round(captureState.scale * 100);
+  let quality;
+  if (captureState.scale > 2) quality = "Strong enlargement; blur may be visible.";
+  else if (captureState.scale > 1.25) quality = "Enlargement; inspect the preview for softness.";
+  else if (captureState.scale < .35) quality = "Heavy reduction; fine details may disappear.";
+  else quality = "Resize amount is within a practical range.";
+  elements.captureQualityNotice.textContent =
+    "Source " + Math.round(sourceRect.width) + "\u00D7" + Math.round(sourceRect.height) +
+    " px \u2192 output " + output.width + "\u00D7" + output.height + " px at " + scalePercent + "%. " + quality;
+  renderCapturePreview();
+  updateSelectionUi();
+}
+
+function setCaptureEnabled(enabled) {
+  captureState.enabled = Boolean(enabled && state.image);
+  if (captureState.enabled && selectionState.enabled) setSelectionEnabled(false);
+  captureState.dragging = false;
+  captureState.pointerId = null;
+  elements.captureControls.hidden = !captureState.enabled;
+  elements.captureToggleButton.textContent = captureState.enabled ? "Disable manual capture" : "Enable manual capture";
+  elements.captureToggleButton.classList.toggle("is-active", captureState.enabled);
+  elements.mapCanvas.classList.toggle("is-capturing", captureState.enabled);
+  elements.mapCanvas.classList.remove("is-capture-dragging");
+  if (captureState.enabled) {
+    elements.gridToggle.checked = false;
+    hideCoordinates();
+    if (!captureState.centerX && !captureState.centerY) resetCapturePosition();
+  }
+  updateCaptureUi();
+  renderPreview();
+}
+
+function beginCaptureDrag(event) {
+  if (!captureState.enabled || !state.image) return false;
+  const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
+  const rect = getCaptureRect();
+  const inside = pixel.x >= rect.x && pixel.x <= rect.x + rect.width && pixel.y >= rect.y && pixel.y <= rect.y + rect.height;
+  captureState.dragOffsetX = inside ? pixel.x - captureState.centerX : 0;
+  captureState.dragOffsetY = inside ? pixel.y - captureState.centerY : 0;
+  captureState.centerX = pixel.x - captureState.dragOffsetX;
+  captureState.centerY = pixel.y - captureState.dragOffsetY;
+  captureState.dragging = true;
+  captureState.pointerId = event.pointerId;
+  clampCapturePosition();
+  elements.mapCanvas.setPointerCapture(event.pointerId);
+  elements.mapCanvas.classList.add("is-capture-dragging");
+  event.preventDefault();
+  updateCaptureUi();
+  renderPreview();
+  return true;
+}
+
+function moveCaptureDrag(event) {
+  if (!captureState.enabled || !captureState.dragging || captureState.pointerId !== event.pointerId) return false;
+  const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
+  captureState.centerX = pixel.x - captureState.dragOffsetX;
+  captureState.centerY = pixel.y - captureState.dragOffsetY;
+  clampCapturePosition();
+  updateCaptureUi();
+  renderPreview();
+  return true;
+}
+
+function finishCaptureDrag(event) {
+  if (!captureState.dragging || captureState.pointerId !== event.pointerId) return false;
+  captureState.dragging = false;
+  captureState.pointerId = null;
+  if (elements.mapCanvas.hasPointerCapture(event.pointerId)) elements.mapCanvas.releasePointerCapture(event.pointerId);
+  elements.mapCanvas.classList.remove("is-capture-dragging");
+  updateCaptureUi();
+  renderPreview();
+  return true;
+}
+
+function zoomCaptureAtPointer(event) {
+  if (!captureState.enabled || !state.image) return;
+  event.preventDefault();
+  const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
+  const factor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
+  setCaptureScale(captureState.scale * factor, pixel);
+}
+
 function getSourceTileFromEvent(event) {
   if (!state.image) return null;
   const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
@@ -537,8 +877,9 @@ function drawSourceSelectionOverlay(context) {
 function updateSelectionUi() {
   const count = getSelectedTileCount();
   const hasSelection = count > 0;
+  const captureCount = captureState.enabled ? captureState.columns * captureState.rows : 0;
   elements.selectedTileCount.textContent = String(count);
-  elements.builderSelectedCount.textContent = String(count);
+  elements.builderSelectedCount.textContent = String(hasSelection ? count : captureCount);
   elements.clearSelectionButton.disabled = !hasSelection;
   elements.addNextSlotsButton.disabled = !hasSelection || !builderState.templateImage;
   elements.placeAtDestinationButton.disabled =
@@ -563,8 +904,13 @@ function updateSelectionUi() {
     elements.selectionSummaryTitle.textContent = "No tiles selected";
     elements.selectionSummaryDetail.textContent =
       selectionState.type === "rectangle" ? "Drag across source cells to select a region." : "Click cells to select them in order.";
-    elements.builderSelectionTitle.textContent = "No source selection";
-    elements.builderSelectionDetail.textContent = "Select tiles in the Source Map workspace.";
+    if (captureState.enabled) {
+      elements.builderSelectionTitle.textContent = captureState.columns + "\u00D7" + captureState.rows + " manual capture ready";
+      elements.builderSelectionDetail.textContent = "Choose a destination, then return to Source Map to place or adjust it.";
+    } else {
+      elements.builderSelectionTitle.textContent = "No source selection";
+      elements.builderSelectionDetail.textContent = "Select tiles in the Source Map workspace.";
+    }
   }
 }
 
@@ -578,6 +924,7 @@ function clearSourceSelection() {
 }
 
 function setSelectionEnabled(enabled) {
+  if (enabled && captureState.enabled) setCaptureEnabled(false);
   selectionState.enabled = Boolean(enabled && state.image);
   elements.selectionControls.hidden = !selectionState.enabled;
   elements.selectionToggleButton.textContent = selectionState.enabled ? "Disable tile selection" : "Enable tile selection";
@@ -610,6 +957,7 @@ function setSelectionType(type) {
 }
 
 function handleSourcePointerDown(event) {
+  if (beginCaptureDrag(event)) return;
   if (!selectionState.enabled || !state.image) return;
   const tile = getSourceTileFromEvent(event);
   if (!tile) {
@@ -632,6 +980,7 @@ function handleSourcePointerDown(event) {
 }
 
 function handleSourceSelectionDrag(event) {
+  if (moveCaptureDrag(event)) return;
   if (!selectionState.enabled || selectionState.type !== "rectangle" || !selectionState.dragStart) return;
   const tile = getSourceTileFromEvent(event);
   if (!tile) return;
@@ -640,6 +989,7 @@ function handleSourceSelectionDrag(event) {
 }
 
 function finishSourceRectangle(event) {
+  if (finishCaptureDrag(event)) return;
   if (!selectionState.dragStart) return;
   const tile = getSourceTileFromEvent(event) || selectionState.dragStart;
   selectionState.rectangle = normalizeRectangle(selectionState.dragStart, tile);
@@ -704,6 +1054,7 @@ function updateBuilderUi() {
     builderState.destination === null || !builderState.cells[builderState.destination];
   elements.clearTilesetButton.disabled = occupied === 0;
   updateSelectionUi();
+  updateCaptureUi();
 }
 
 function renderTileset() {
@@ -795,6 +1146,79 @@ function extractSourceTile(tile) {
   return canvas;
 }
 
+function getCapturedTiles() {
+  const captured = renderCapturedRegion();
+  const sourceRect = getCaptureRect();
+  const tiles = [];
+  for (let row = 0; row < captureState.rows; row += 1) {
+    for (let column = 0; column < captureState.columns; column += 1) {
+      const canvas = document.createElement("canvas");
+      canvas.width = MZ_TILE_SIZE;
+      canvas.height = MZ_TILE_SIZE;
+      const context = canvas.getContext("2d");
+      context.imageSmoothingEnabled = false;
+      context.drawImage(
+        captured,
+        column * MZ_TILE_SIZE, row * MZ_TILE_SIZE, MZ_TILE_SIZE, MZ_TILE_SIZE,
+        0, 0, MZ_TILE_SIZE, MZ_TILE_SIZE,
+      );
+      canvas.captureMetadata = {
+        sourceName: state.file ? state.file.name : "source image",
+        sourceRect: { ...sourceRect },
+        scale: captureState.scale,
+        method: elements.captureResizeMethod.value,
+        columns: captureState.columns,
+        rows: captureState.rows,
+        column,
+        row,
+      };
+      tiles.push({ canvas, relativeX: column, relativeY: row });
+    }
+  }
+  return tiles;
+}
+
+function getCaptureTargets(startX, startY) {
+  if (startX + captureState.columns > builderState.columns || startY + captureState.rows > builderState.rows) {
+    return null;
+  }
+  return getCapturedTiles().map((tile) => ({
+    canvas: tile.canvas,
+    index: (startY + tile.relativeY) * builderState.columns + startX + tile.relativeX,
+  }));
+}
+
+function placeCaptureAtSelectedDestination() {
+  if (!captureState.enabled || builderState.destination === null || !builderState.templateImage) return;
+  const startX = builderState.destination % builderState.columns;
+  const startY = Math.floor(builderState.destination / builderState.columns);
+  const targets = getCaptureTargets(startX, startY);
+  if (!targets) {
+    setBuilderNotice(
+      "The " + captureState.columns + "\u00D7" + captureState.rows + " capture does not fit at that destination.",
+      true,
+    );
+    showToast("The captured region does not fit at the selected destination.", true);
+    return;
+  }
+  commitPlacement(targets, "Placed captured " + captureState.columns + "\u00D7" + captureState.rows + " region.");
+}
+
+function addCaptureToNextEmptyRegion() {
+  if (!captureState.enabled || !builderState.templateImage) return;
+  const start = findEmptyRectangle(captureState.columns, captureState.rows);
+  if (!start) {
+    setBuilderNotice(
+      "No empty " + captureState.columns + "\u00D7" + captureState.rows + " destination region is available.",
+      true,
+    );
+    showToast("No matching empty region is available.", true);
+    return;
+  }
+  const targets = getCaptureTargets(start.x, start.y);
+  commitPlacement(targets, "Added captured " + captureState.columns + "\u00D7" + captureState.rows + " region.");
+}
+
 function commitPlacement(targets, message) {
   const occupied = targets.filter((target) => builderState.cells[target.index]).length;
   if (occupied && !window.confirm(
@@ -804,7 +1228,9 @@ function commitPlacement(targets, message) {
     setBuilderNotice("Placement cancelled; no tiles were changed.", true);
     return;
   }
-  targets.forEach((target) => { builderState.cells[target.index] = extractSourceTile(target.tile); });
+  targets.forEach((target) => {
+    builderState.cells[target.index] = target.canvas || extractSourceTile(target.tile);
+  });
   setBuilderNotice("");
   renderTileset();
   updateBuilderUi();
@@ -960,10 +1386,24 @@ elements.selectionToggleButton.addEventListener("click", () => setSelectionEnabl
 elements.individualSelectionButton.addEventListener("click", () => setSelectionType("individual"));
 elements.rectangleSelectionButton.addEventListener("click", () => setSelectionType("rectangle"));
 elements.clearSelectionButton.addEventListener("click", clearSourceSelection);
+elements.captureToggleButton.addEventListener("click", () => setCaptureEnabled(!captureState.enabled));
+elements.captureColumns.addEventListener("change", updateCaptureDimensions);
+elements.captureRows.addEventListener("change", updateCaptureDimensions);
+elements.captureColumns.addEventListener("input", previewCaptureDimensions);
+elements.captureRows.addEventListener("input", previewCaptureDimensions);
+elements.captureResizeMethod.addEventListener("change", () => {
+  updateCaptureUi();
+  renderPreview();
+});
+elements.captureScale.addEventListener("input", () => setCaptureScale(Number(elements.captureScale.value) / 100));
+elements.captureResetButton.addEventListener("click", resetCapturePosition);
+elements.capturePlaceSelectedButton.addEventListener("click", placeCaptureAtSelectedDestination);
+elements.captureAddNextButton.addEventListener("click", addCaptureToNextEmptyRegion);
 elements.mapCanvas.addEventListener("pointerdown", handleSourcePointerDown);
 elements.mapCanvas.addEventListener("pointermove", handleSourceSelectionDrag);
 elements.mapCanvas.addEventListener("pointerup", finishSourceRectangle);
 elements.mapCanvas.addEventListener("pointercancel", finishSourceRectangle);
+elements.mapCanvas.addEventListener("wheel", zoomCaptureAtPointer, { passive: false });
 elements.tilesetCanvas.addEventListener("click", selectBuilderDestination);
 elements.placeAtDestinationButton.addEventListener("click", placeAtSelectedDestination);
 elements.addNextSlotsButton.addEventListener("click", addToNextAvailableSlots);
@@ -1013,4 +1453,5 @@ window.addEventListener("beforeunload", () => {
 
 updateGridStatus();
 updateSelectionUi();
+updateCaptureUi();
 loadTilesetTemplate();

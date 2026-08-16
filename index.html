@@ -133,6 +133,65 @@
             </div>
           </section>
 
+          <section class="panel-section capture-section" aria-labelledby="manualCaptureHeading">
+            <div class="section-heading">
+              <h2 id="manualCaptureHeading">Manual tile capture</h2>
+              <span id="captureOutputBadge" class="subtle-badge">1&times;1</span>
+            </div>
+            <button id="captureToggleButton" class="button button-secondary button-wide" type="button" disabled>
+              Enable manual capture
+            </button>
+
+            <div id="captureControls" hidden>
+              <div class="capture-dimensions" aria-label="Captured tile dimensions">
+                <label for="captureColumns">
+                  <span>Tiles wide</span>
+                  <span class="number-input-wrap">
+                    <input id="captureColumns" type="number" min="1" max="16" step="1" value="1" inputmode="numeric" />
+                  </span>
+                </label>
+                <label for="captureRows">
+                  <span>Tiles high</span>
+                  <span class="number-input-wrap">
+                    <input id="captureRows" type="number" min="1" max="16" step="1" value="1" inputmode="numeric" />
+                  </span>
+                </label>
+              </div>
+
+              <label class="field-label capture-method-label" for="captureResizeMethod">
+                <span>Resize method</span>
+                <select id="captureResizeMethod">
+                  <option value="artwork">Artwork</option>
+                  <option value="pixel-art">Pixel art</option>
+                </select>
+              </label>
+
+              <label class="range-label" for="captureScale">
+                <span>Object scale</span>
+                <output id="captureScaleValue" for="captureScale">100%</output>
+                <input id="captureScale" type="range" min="10" max="800" step="1" value="100" />
+              </label>
+
+              <div class="capture-preview-wrap">
+                <canvas id="capturePreviewCanvas" width="48" height="48" aria-label="Captured tile preview"></canvas>
+              </div>
+              <div id="captureQualityNotice" class="tile-equation">Drag the frame over the image to choose a tile.</div>
+
+              <div class="capture-actions">
+                <button id="captureResetButton" class="button button-secondary button-wide" type="button">
+                  Center &amp; Reset Scale
+                </button>
+                <button id="capturePlaceSelectedButton" class="button button-primary button-wide" type="button" disabled>
+                  Place at Builder Selection
+                </button>
+                <button id="captureAddNextButton" class="button button-secondary button-wide" type="button" disabled>
+                  Add to Next Empty Region
+                </button>
+              </div>
+              <p class="helper-text">Drag the frame to move through the source. Use the mouse wheel over the image to resize the object.</p>
+            </div>
+          </section>
+
           <section class="panel-section export-section" aria-labelledby="exportHeading">
             <h2 id="exportHeading">Export</h2>
             <button id="exportGridButton" class="button button-primary button-wide" type="button" disabled>
