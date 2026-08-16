@@ -1034,6 +1034,77 @@ input[type="color"] {
   margin-top: 8px;
 }
 
+.quality-controls {
+  margin-top: 12px;
+}
+
+.quality-outlier-list {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  margin-top: 9px;
+  overflow: auto;
+}
+
+.quality-outlier-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 39px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 6px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.018);
+  text-align: left;
+  cursor: pointer;
+}
+
+.quality-outlier-item:hover {
+  background: var(--panel-raised);
+}
+
+.quality-outlier-item.is-soft {
+  border-left-color: var(--warning);
+}
+
+.quality-outlier-item.is-sharp {
+  border-left-color: #c07aff;
+}
+
+.quality-outlier-item span:first-child,
+.quality-outlier-item strong,
+.quality-outlier-item small {
+  display: block;
+}
+
+.quality-outlier-item strong {
+  margin-bottom: 2px;
+  font-size: 0.68rem;
+}
+
+.quality-outlier-item small,
+.quality-score {
+  color: var(--text-dim);
+  font-size: 0.61rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.quality-score {
+  flex: none;
+}
+
+.quality-actions {
+  margin-top: 10px;
+}
+
+.quality-actions .button + .button {
+  margin-top: 8px;
+}
+
 #mapCanvas.is-capturing {
   cursor: grab;
 }

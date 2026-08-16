@@ -66,6 +66,17 @@ const elements = {
   captureResetButton: document.querySelector("#captureResetButton"),
   capturePlaceSelectedButton: document.querySelector("#capturePlaceSelectedButton"),
   captureAddNextButton: document.querySelector("#captureAddNextButton"),
+  analyzeTilesButton: document.querySelector("#analyzeTilesButton"),
+  qualityStatusBadge: document.querySelector("#qualityStatusBadge"),
+  outlierSensitivity: document.querySelector("#outlierSensitivity"),
+  outlierSensitivityValue: document.querySelector("#outlierSensitivityValue"),
+  harmonizeStrength: document.querySelector("#harmonizeStrength"),
+  harmonizeStrengthValue: document.querySelector("#harmonizeStrengthValue"),
+  showQualityOverlay: document.querySelector("#showQualityOverlay"),
+  qualitySummary: document.querySelector("#qualitySummary"),
+  qualityOutlierList: document.querySelector("#qualityOutlierList"),
+  harmonizeTilesButton: document.querySelector("#harmonizeTilesButton"),
+  resetHarmonizeButton: document.querySelector("#resetHarmonizeButton"),
   builderSelectedCount: document.querySelector("#builderSelectedCount"),
   builderSelectionTitle: document.querySelector("#builderSelectionTitle"),
   builderSelectionDetail: document.querySelector("#builderSelectionDetail"),
@@ -133,6 +144,16 @@ const panState = {
   startScrollTop: 0,
   moved: false,
   suppressClick: false,
+};
+
+const qualityState = {
+  results: [],
+  scope: [],
+  eligibleCount: 0,
+  analyzed: false,
+  harmonizedCanvas: null,
+  baselineMedian: 0,
+  baselineMad: 0,
 };
 
 const builderState = {
@@ -356,6 +377,10 @@ function updateGridStatus() {
     : "Grid hidden";
 }
 
+function getActiveSource() {
+  return qualityState.harmonizedCanvas || state.image;
+}
+
 function renderPreview() {
   updateGridStatus();
   if (!state.image) return;
@@ -363,14 +388,383 @@ function renderPreview() {
   const { naturalWidth: width, naturalHeight: height } = state.image;
   displayContext.clearRect(0, 0, width, height);
   displayContext.globalAlpha = 1;
-  displayContext.drawImage(state.image, 0, 0, width, height);
+  displayContext.drawImage(getActiveSource(), 0, 0, width, height);
 
   if (elements.gridToggle.checked) {
     drawGrid(displayContext, width, height, getGridSettings());
   }
 
+  drawQualityOverlay(displayContext);
   drawSourceSelectionOverlay(displayContext);
   drawCaptureOverlay(displayContext);
+}
+
+function median(values) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function medianAbsoluteDeviation(values, center = median(values)) {
+  return median(values.map((value) => Math.abs(value - center)));
+}
+
+function getAnalysisScope() {
+  const columns = Math.floor(state.image.naturalWidth / MZ_TILE_SIZE);
+  const rows = Math.floor(state.image.naturalHeight / MZ_TILE_SIZE);
+  const payload = getSelectionPayload();
+  if (payload) {
+    return {
+      kind: "selection",
+      tiles: payload.tiles
+        .map((tile) => ({ x: tile.sourceX, y: tile.sourceY }))
+        .filter((tile) => tile.x >= 0 && tile.x < columns && tile.y >= 0 && tile.y < rows),
+    };
+  }
+
+  const tiles = [];
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < columns; x += 1) tiles.push({ x, y });
+  }
+  return { kind: "complete grid", tiles };
+}
+
+function calculateTileMetrics(imageData, imageWidth, tileX, tileY) {
+  const pixelCount = MZ_TILE_SIZE * MZ_TILE_SIZE;
+  const luminance = new Float32Array(pixelCount);
+  const visible = new Uint8Array(pixelCount);
+  let visibleCount = 0;
+  let luminanceSum = 0;
+  let luminanceSquareSum = 0;
+
+  for (let localY = 0; localY < MZ_TILE_SIZE; localY += 1) {
+    for (let localX = 0; localX < MZ_TILE_SIZE; localX += 1) {
+      const localIndex = localY * MZ_TILE_SIZE + localX;
+      const sourceX = tileX * MZ_TILE_SIZE + localX;
+      const sourceY = tileY * MZ_TILE_SIZE + localY;
+      const sourceIndex = (sourceY * imageWidth + sourceX) * 4;
+      const alpha = imageData[sourceIndex + 3];
+      if (alpha <= 16) continue;
+      const value =
+        imageData[sourceIndex] * .2126 +
+        imageData[sourceIndex + 1] * .7152 +
+        imageData[sourceIndex + 2] * .0722;
+      luminance[localIndex] = value;
+      visible[localIndex] = 1;
+      visibleCount += 1;
+      luminanceSum += value;
+      luminanceSquareSum += value * value;
+    }
+  }
+
+  const alphaCoverage = visibleCount / pixelCount;
+  const meanLuminance = visibleCount ? luminanceSum / visibleCount : 0;
+  const contrast = visibleCount
+    ? Math.sqrt(Math.max(0, luminanceSquareSum / visibleCount - meanLuminance * meanLuminance))
+    : 0;
+  let laplacianSum = 0;
+  let laplacianSquareSum = 0;
+  let edgeSum = 0;
+  let edgeCount = 0;
+  let strongEdgeCount = 0;
+
+  for (let y = 1; y < MZ_TILE_SIZE - 1; y += 1) {
+    for (let x = 1; x < MZ_TILE_SIZE - 1; x += 1) {
+      const index = y * MZ_TILE_SIZE + x;
+      const north = index - MZ_TILE_SIZE;
+      const south = index + MZ_TILE_SIZE;
+      const west = index - 1;
+      const east = index + 1;
+      if (!visible[index] || !visible[north] || !visible[south] || !visible[west] || !visible[east]) continue;
+      const center = luminance[index];
+      const laplacian = luminance[north] + luminance[south] + luminance[west] + luminance[east] - 4 * center;
+      const gradientX = luminance[east] - center;
+      const gradientY = luminance[south] - center;
+      const edge = Math.sqrt(gradientX * gradientX + gradientY * gradientY);
+      laplacianSum += laplacian;
+      laplacianSquareSum += laplacian * laplacian;
+      edgeSum += edge;
+      edgeCount += 1;
+      if (edge >= 28) strongEdgeCount += 1;
+    }
+  }
+
+  const laplacianMean = edgeCount ? laplacianSum / edgeCount : 0;
+  const sharpness = edgeCount
+    ? Math.max(0, laplacianSquareSum / edgeCount - laplacianMean * laplacianMean)
+    : 0;
+  const edgeEnergy = edgeCount ? edgeSum / edgeCount : 0;
+  const edgeDensity = edgeCount ? strongEdgeCount / edgeCount : 0;
+  const composite = Math.log1p(sharpness) + .65 * Math.log1p(edgeEnergy);
+  const eligible = alphaCoverage >= .08 && contrast >= 4 && edgeCount >= 64 && edgeEnergy >= 1.5;
+
+  return {
+    x: tileX,
+    y: tileY,
+    alphaCoverage,
+    meanLuminance,
+    contrast,
+    sharpness,
+    edgeEnergy,
+    edgeDensity,
+    composite,
+    eligible,
+    status: eligible ? "normal" : "ignored",
+    robustScore: 0,
+  };
+}
+
+function getOutlierThreshold() {
+  return Number(elements.outlierSensitivity.value) / 10;
+}
+
+function getSensitivityLabel() {
+  const threshold = getOutlierThreshold();
+  if (threshold <= 2.1) return "Sensitive";
+  if (threshold >= 3) return "Conservative";
+  return "Balanced";
+}
+
+function classifyTileOutliers(results) {
+  const eligible = results.filter((result) => result.eligible);
+  qualityState.eligibleCount = eligible.length;
+  if (eligible.length < 4) return;
+  const composites = eligible.map((result) => result.composite);
+  const edges = eligible.map((result) => Math.log1p(result.edgeEnergy));
+  const center = median(composites);
+  const edgeCenter = median(edges);
+  const mad = medianAbsoluteDeviation(composites, center);
+  const edgeMad = medianAbsoluteDeviation(edges, edgeCenter);
+  const scale = Math.max(.08, mad * 1.4826);
+  const edgeScale = Math.max(.05, edgeMad * 1.4826);
+  const threshold = getOutlierThreshold();
+  qualityState.baselineMedian = center;
+  qualityState.baselineMad = mad;
+
+  eligible.forEach((result) => {
+    const score = (result.composite - center) / scale;
+    const edgeScore = (Math.log1p(result.edgeEnergy) - edgeCenter) / edgeScale;
+    result.robustScore = score;
+    if (score <= -threshold && edgeScore <= -threshold * .45) result.status = "soft";
+    else if (score >= threshold && edgeScore >= threshold * .35) result.status = "sharp";
+  });
+}
+
+function focusSourceTile(tile) {
+  switchWorkspace("source");
+  if (state.zoom < 1) setPreviewZoom(1);
+  window.requestAnimationFrame(() => {
+    const scale = state.zoom;
+    const centerX = (tile.x * MZ_TILE_SIZE + MZ_TILE_SIZE / 2) * scale;
+    const centerY = (tile.y * MZ_TILE_SIZE + MZ_TILE_SIZE / 2) * scale;
+    elements.canvasViewport.scrollTo({
+      left: Math.max(0, centerX - elements.canvasViewport.clientWidth / 2),
+      top: Math.max(0, centerY - elements.canvasViewport.clientHeight / 2),
+      behavior: "smooth",
+    });
+  });
+}
+
+function updateQualityUi() {
+  const soft = qualityState.results.filter((result) => result.status === "soft");
+  const sharp = qualityState.results.filter((result) => result.status === "sharp");
+  const outliers = [...soft, ...sharp].sort((a, b) => Math.abs(b.robustScore) - Math.abs(a.robustScore));
+  elements.outlierSensitivityValue.textContent = getSensitivityLabel();
+  elements.harmonizeStrengthValue.textContent = elements.harmonizeStrength.value + "%";
+  elements.harmonizeTilesButton.disabled = !state.image || !outliers.length || Boolean(qualityState.harmonizedCanvas);
+  elements.resetHarmonizeButton.disabled = !qualityState.harmonizedCanvas;
+  elements.qualityOutlierList.replaceChildren();
+  elements.qualityOutlierList.hidden = !outliers.length;
+
+  if (!qualityState.analyzed) {
+    elements.qualityStatusBadge.textContent = "Not run";
+    elements.qualitySummary.textContent =
+      "Analyze a logical group of selected tiles, or the complete source grid when nothing is selected.";
+    return;
+  }
+
+  elements.qualityStatusBadge.textContent = qualityState.harmonizedCanvas
+    ? "Corrected"
+    : outliers.length + (outliers.length === 1 ? " flag" : " flags");
+  const ignored = qualityState.results.length - qualityState.eligibleCount;
+  const scopeLabel = qualityState.scope.kind === "selection" ? "selected tiles" : "complete source grid";
+  elements.qualitySummary.textContent =
+    "Analyzed " + qualityState.results.length + " " + scopeLabel + ". " +
+    soft.length + " soft, " + sharp.length + " overly sharp, " + ignored + " excluded as empty or low-detail.";
+
+  outliers.slice(0, 12).forEach((result) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quality-outlier-item is-" + result.status;
+    const label = result.status === "soft" ? "Soft" : "Over-sharp";
+    button.innerHTML =
+      '<span><strong>' + label + '</strong><small>X:' + result.x + ' Y:' + result.y + '</small></span>' +
+      '<span class="quality-score">' + Math.abs(result.robustScore).toFixed(1) + 'σ</span>';
+    button.addEventListener("click", () => focusSourceTile(result));
+    elements.qualityOutlierList.append(button);
+  });
+}
+
+function resetQualityState({ render = true } = {}) {
+  qualityState.results = [];
+  qualityState.scope = [];
+  qualityState.eligibleCount = 0;
+  qualityState.analyzed = false;
+  qualityState.harmonizedCanvas = null;
+  qualityState.baselineMedian = 0;
+  qualityState.baselineMad = 0;
+  updateQualityUi();
+  if (render) {
+    renderPreview();
+    updateCaptureUi();
+  }
+}
+
+function analyzeTiles({ announce = true } = {}) {
+  if (!state.image) return;
+  const scope = getAnalysisScope();
+  if (!scope.tiles.length) {
+    showToast("There are no complete 48×48 tiles to analyze.", true);
+    return;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = state.image.naturalWidth;
+  canvas.height = state.image.naturalHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(getActiveSource(), 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  const results = scope.tiles.map((tile) => calculateTileMetrics(pixels, canvas.width, tile.x, tile.y));
+  classifyTileOutliers(results);
+  qualityState.results = results;
+  qualityState.scope = scope;
+  qualityState.analyzed = true;
+  updateQualityUi();
+  renderPreview();
+  if (announce) {
+    const outlierCount = results.filter((result) => result.status === "soft" || result.status === "sharp").length;
+    showToast("Analyzed " + results.length + " tiles; " + outlierCount + " quality " + (outlierCount === 1 ? "flag" : "flags") + ".");
+  }
+}
+
+function drawQualityOverlay(context) {
+  if (!qualityState.analyzed || !elements.showQualityOverlay.checked) return;
+  context.save();
+  qualityState.results.forEach((result) => {
+    if (result.status !== "soft" && result.status !== "sharp") return;
+    const x = result.x * MZ_TILE_SIZE;
+    const y = result.y * MZ_TILE_SIZE;
+    const soft = result.status === "soft";
+    context.fillStyle = soft ? "rgba(255, 191, 91, .27)" : "rgba(185, 110, 255, .25)";
+    context.strokeStyle = soft ? "#ffbf5b" : "#c07aff";
+    context.lineWidth = 3;
+    context.fillRect(x, y, MZ_TILE_SIZE, MZ_TILE_SIZE);
+    context.strokeRect(x + 1.5, y + 1.5, MZ_TILE_SIZE - 3, MZ_TILE_SIZE - 3);
+    context.fillStyle = "#071019";
+    context.font = "bold 12px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(soft ? "SOFT" : "SHARP", x + MZ_TILE_SIZE / 2, y + MZ_TILE_SIZE / 2);
+  });
+  context.restore();
+}
+
+function createGaussianLuminance(imageData, width, height) {
+  const blurred = new Float32Array(width * height);
+  const kernel = [1, 2, 1];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let weightedLuminance = 0;
+      let weightedAlpha = 0;
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+        const sampleY = Math.min(height - 1, Math.max(0, y + offsetY));
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          const sampleX = Math.min(width - 1, Math.max(0, x + offsetX));
+          const index = (sampleY * width + sampleX) * 4;
+          const alpha = imageData[index + 3] / 255;
+          const weight = kernel[offsetX + 1] * kernel[offsetY + 1] * alpha;
+          if (!weight) continue;
+          const luminance =
+            imageData[index] * .2126 +
+            imageData[index + 1] * .7152 +
+            imageData[index + 2] * .0722;
+          weightedLuminance += luminance * weight;
+          weightedAlpha += weight;
+        }
+      }
+      const sourceIndex = (y * width + x) * 4;
+      const sourceLuminance =
+        imageData[sourceIndex] * .2126 +
+        imageData[sourceIndex + 1] * .7152 +
+        imageData[sourceIndex + 2] * .0722;
+      blurred[y * width + x] = weightedAlpha ? weightedLuminance / weightedAlpha : sourceLuminance;
+    }
+  }
+  return blurred;
+}
+
+function clampChannel(value) {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function harmonizeFlaggedTiles() {
+  if (!state.image || qualityState.harmonizedCanvas || !qualityState.analyzed) return;
+  const flagged = qualityState.results.filter((result) => result.status === "soft" || result.status === "sharp");
+  if (!flagged.length) return;
+  const canvas = document.createElement("canvas");
+  canvas.width = state.image.naturalWidth;
+  canvas.height = state.image.naturalHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(state.image, 0, 0);
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const original = new Uint8ClampedArray(image.data);
+  const blurredLuminance = createGaussianLuminance(original, canvas.width, canvas.height);
+  const strength = Number(elements.harmonizeStrength.value) / 100;
+  const threshold = getOutlierThreshold();
+
+  flagged.forEach((result) => {
+    const severity = Math.max(0, Math.abs(result.robustScore) - threshold);
+    const baseAmount = result.status === "soft"
+      ? Math.min(.8, .34 + severity * .1) * strength
+      : Math.min(.36, .16 + severity * .05) * strength;
+    for (let localY = 0; localY < MZ_TILE_SIZE; localY += 1) {
+      for (let localX = 0; localX < MZ_TILE_SIZE; localX += 1) {
+        const x = result.x * MZ_TILE_SIZE + localX;
+        const y = result.y * MZ_TILE_SIZE + localY;
+        if (x >= canvas.width || y >= canvas.height) continue;
+        const index = (y * canvas.width + x) * 4;
+        if (original[index + 3] <= 16) continue;
+        const distanceToEdge = Math.min(localX, localY, MZ_TILE_SIZE - 1 - localX, MZ_TILE_SIZE - 1 - localY);
+        const feather = Math.min(1, distanceToEdge / 4);
+        if (!feather) continue;
+        const sourceLuminance =
+          original[index] * .2126 + original[index + 1] * .7152 + original[index + 2] * .0722;
+        const blurLuminance = blurredLuminance[y * canvas.width + x];
+        const luminanceDelta = result.status === "soft"
+          ? sourceLuminance - blurLuminance
+          : blurLuminance - sourceLuminance;
+        const correction = luminanceDelta * baseAmount * feather;
+        image.data[index] = clampChannel(original[index] + correction);
+        image.data[index + 1] = clampChannel(original[index + 1] + correction);
+        image.data[index + 2] = clampChannel(original[index + 2] + correction);
+        image.data[index + 3] = original[index + 3];
+      }
+    }
+  });
+
+  context.putImageData(image, 0, 0);
+  qualityState.harmonizedCanvas = canvas;
+  analyzeTiles({ announce: false });
+  updateCaptureUi();
+  showToast("Harmonized " + flagged.length + " flagged " + (flagged.length === 1 ? "tile" : "tiles") + " from the original source.");
+}
+
+function restoreOriginalSource() {
+  if (!qualityState.harmonizedCanvas) return;
+  qualityState.harmonizedCanvas = null;
+  analyzeTiles({ announce: false });
+  updateCaptureUi();
+  showToast("Restored the unchanged original source image.");
 }
 
 function formatTileCount(pixels) {
@@ -429,6 +823,7 @@ function loadImageFile(file) {
     state.objectUrl = nextObjectUrl;
     state.fitToViewport = false;
     state.zoom = 1;
+    resetQualityState({ render: false });
 
     const { naturalWidth: width, naturalHeight: height } = nextImage;
     elements.mapCanvas.width = width;
@@ -452,6 +847,7 @@ function loadImageFile(file) {
       elements.exportGridButton,
       elements.exportOriginalButton,
       elements.fitButton,
+      elements.analyzeTilesButton,
       ...elements.zoomPresetButtons,
     ].forEach((button) => {
       button.disabled = false;
@@ -572,7 +968,7 @@ function exportGriddedPng() {
   exportCanvas.width = state.image.naturalWidth;
   exportCanvas.height = state.image.naturalHeight;
   const exportContext = exportCanvas.getContext("2d");
-  exportContext.drawImage(state.image, 0, 0);
+  exportContext.drawImage(getActiveSource(), 0, 0);
 
   // The explicit grid export always contains the grid, even when its preview is
   // hidden. It uses the current size, color, opacity, and thickness settings.
@@ -852,12 +1248,12 @@ function renderCapturedRegion() {
   if (elements.captureResizeMethod.value === "pixel-art") {
     context.imageSmoothingEnabled = false;
     context.drawImage(
-      state.image,
+      getActiveSource(),
       sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height,
       0, 0, output.width, output.height,
     );
   } else {
-    drawHighQualityRegion(context, state.image, sourceRect, output.width, output.height);
+    drawHighQualityRegion(context, getActiveSource(), sourceRect, output.width, output.height);
   }
 
   return canvas;
@@ -1299,7 +1695,7 @@ function extractSourceTile(tile) {
   canvas.width = MZ_TILE_SIZE;
   canvas.height = MZ_TILE_SIZE;
   canvas.getContext("2d").drawImage(
-    state.image,
+    getActiveSource(),
     tile.sourceX * MZ_TILE_SIZE,
     tile.sourceY * MZ_TILE_SIZE,
     MZ_TILE_SIZE,
@@ -1563,6 +1959,15 @@ elements.captureScale.addEventListener("input", () => setCaptureScale(Number(ele
 elements.captureResetButton.addEventListener("click", resetCapturePosition);
 elements.capturePlaceSelectedButton.addEventListener("click", placeCaptureAtSelectedDestination);
 elements.captureAddNextButton.addEventListener("click", addCaptureToNextEmptyRegion);
+elements.analyzeTilesButton.addEventListener("click", () => analyzeTiles());
+elements.outlierSensitivity.addEventListener("input", updateQualityUi);
+elements.outlierSensitivity.addEventListener("change", () => {
+  if (qualityState.analyzed) analyzeTiles({ announce: false });
+});
+elements.harmonizeStrength.addEventListener("input", updateQualityUi);
+elements.showQualityOverlay.addEventListener("change", renderPreview);
+elements.harmonizeTilesButton.addEventListener("click", harmonizeFlaggedTiles);
+elements.resetHarmonizeButton.addEventListener("click", restoreOriginalSource);
 elements.mapCanvas.addEventListener("pointerdown", handleSourcePointerDown);
 elements.mapCanvas.addEventListener("pointermove", handleSourceSelectionDrag);
 elements.mapCanvas.addEventListener("pointerup", finishSourceRectangle);
@@ -1638,4 +2043,5 @@ initializeCollapsibleSections();
 updateGridStatus();
 updateSelectionUi();
 updateCaptureUi();
+updateQualityUi();
 loadTilesetTemplate();

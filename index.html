@@ -192,6 +192,43 @@
             </div>
           </section>
 
+          <section class="panel-section quality-section" data-collapsible="tile-quality" aria-labelledby="tileQualityHeading">
+            <div class="section-heading">
+              <h2 id="tileQualityHeading">Tile quality</h2>
+              <span id="qualityStatusBadge" class="subtle-badge">Not run</span>
+            </div>
+            <button id="analyzeTilesButton" class="button button-primary button-wide" type="button" disabled>
+              Analyze Tile Quality
+            </button>
+            <div id="qualityControls" class="quality-controls">
+              <label class="range-label" for="outlierSensitivity">
+                <span>Outlier sensitivity</span>
+                <output id="outlierSensitivityValue" for="outlierSensitivity">Balanced</output>
+                <input id="outlierSensitivity" type="range" min="18" max="35" step="1" value="25" />
+              </label>
+              <label class="range-label" for="harmonizeStrength">
+                <span>Correction strength</span>
+                <output id="harmonizeStrengthValue" for="harmonizeStrength">55%</output>
+                <input id="harmonizeStrength" type="range" min="10" max="100" step="5" value="55" />
+              </label>
+              <label class="check-label" for="showQualityOverlay">
+                <input id="showQualityOverlay" type="checkbox" checked />
+                <span>Show quality overlay</span>
+              </label>
+            </div>
+            <div id="qualitySummary" class="tile-equation">Analyze a logical group of selected tiles, or the complete source grid when nothing is selected.</div>
+            <div id="qualityOutlierList" class="quality-outlier-list" hidden></div>
+            <div class="quality-actions">
+              <button id="harmonizeTilesButton" class="button button-primary button-wide" type="button" disabled>
+                Harmonize Flagged Tiles
+              </button>
+              <button id="resetHarmonizeButton" class="button button-secondary button-wide" type="button" disabled>
+                Restore Original Source
+              </button>
+            </div>
+            <p class="helper-text">Corrections are preview-only until tiles are placed or exported. Empty and low-detail tiles are excluded.</p>
+          </section>
+
           <section class="panel-section export-section" data-collapsible="source-export" aria-labelledby="exportHeading">
             <h2 id="exportHeading">Export</h2>
             <button id="exportGridButton" class="button button-primary button-wide" type="button" disabled>
