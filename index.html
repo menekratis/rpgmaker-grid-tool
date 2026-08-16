@@ -195,17 +195,23 @@
                   <button id="maskUndoButton" class="button button-quiet" type="button" disabled>Undo Mask</button>
                   <button id="maskResetButton" class="button button-quiet" type="button" disabled>Reset Mask</button>
                 </div>
+                <button id="maskClearSelectionButton" class="button button-secondary button-wide mask-clear-button" type="button" disabled>
+                  Clear Object Selection
+                </button>
 
                 <details class="advanced-options">
-                  <summary>Edge cleanup</summary>
+                  <summary>Edge cleanup (optional)</summary>
+                  <p class="helper-text edge-cleanup-help">
+                    Boundary adds or trims pixels around the mask. Softness blends the transparent edge. Keep softness at 0 for pixel art.
+                  </p>
                   <label class="range-label" for="maskEdgeExpand">
-                    <span>Expand / shrink</span>
-                    <output id="maskEdgeExpandValue" for="maskEdgeExpand">0 px</output>
+                    <span>Mask boundary</span>
+                    <output id="maskEdgeExpandValue" for="maskEdgeExpand">Unchanged</output>
                     <input id="maskEdgeExpand" type="range" min="-3" max="3" step="1" value="0" />
                   </label>
                   <label class="range-label" for="maskFeather">
                     <span>Edge softness</span>
-                    <output id="maskFeatherValue" for="maskFeather">0 px</output>
+                    <output id="maskFeatherValue" for="maskFeather">Hard edge</output>
                     <input id="maskFeather" type="range" min="0" max="4" step="1" value="0" />
                   </label>
                 </details>
@@ -262,7 +268,15 @@
                 <input id="captureScale" type="range" min="10" max="800" step="1" value="100" />
               </label>
 
-              <div class="capture-preview-wrap">
+              <div class="capture-preview-toolbar">
+                <span>Placement preview</span>
+                <div class="preview-zoom-controls" aria-label="Placement preview zoom">
+                  <button id="previewZoomOutButton" class="preview-zoom-button" type="button" aria-label="Zoom preview out">&minus;</button>
+                  <output id="previewZoomValue" aria-live="polite">300%</output>
+                  <button id="previewZoomInButton" class="preview-zoom-button" type="button" aria-label="Zoom preview in">+</button>
+                </div>
+              </div>
+              <div id="capturePreviewWrap" class="capture-preview-wrap">
                 <canvas id="capturePreviewCanvas" width="48" height="48" aria-label="Captured tile preview"></canvas>
               </div>
               <p class="preview-drag-hint">Drag the preview to position the object inside its tile area.</p>

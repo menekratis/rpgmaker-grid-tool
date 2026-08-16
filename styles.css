@@ -998,12 +998,13 @@ input[type="color"] {
 .capture-preview-wrap {
   display: grid;
   min-height: 150px;
-  margin-top: 14px;
+  max-height: 330px;
+  margin-top: 7px;
   padding: 10px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
-  place-items: center;
+  place-items: safe center;
   background-color: #090c11;
   background-image:
     linear-gradient(45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%),
@@ -1016,8 +1017,7 @@ input[type="color"] {
 
 #capturePreviewCanvas {
   display: block;
-  max-width: 100%;
-  max-height: 260px;
+  flex: none;
   border: 1px solid rgba(255, 255, 255, 0.13);
   image-rendering: auto;
   cursor: grab;
@@ -1033,6 +1033,56 @@ input[type="color"] {
   color: var(--text-dim);
   font-size: 0.61rem;
   text-align: center;
+}
+
+.capture-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  color: var(--text-soft);
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.preview-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.preview-zoom-controls output {
+  min-width: 42px;
+  color: var(--text-dim);
+  font-size: 0.62rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-zoom-button {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-soft);
+  background: #0c1017;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.preview-zoom-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+.preview-zoom-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 #capturePreviewCanvas.is-pixel-art {
@@ -1127,7 +1177,7 @@ input[type="color"] {
 }
 
 #mapCanvas.is-capturing.is-mask-brushing {
-  cursor: none;
+  cursor: crosshair;
 }
 
 #mapCanvas.is-capture-dragging {
@@ -1300,6 +1350,15 @@ input:disabled {
 .advanced-options[open] summary {
   margin-bottom: 4px;
   color: var(--text-soft);
+}
+
+.mask-clear-button {
+  margin-top: 7px;
+}
+
+.edge-cleanup-help {
+  margin: 8px 0 2px;
+  line-height: 1.45;
 }
 
 #tilesetCanvas {

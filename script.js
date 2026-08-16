@@ -76,6 +76,7 @@ const elements = {
   maskToleranceValue: document.querySelector("#maskToleranceValue"),
   maskUndoButton: document.querySelector("#maskUndoButton"),
   maskResetButton: document.querySelector("#maskResetButton"),
+  maskClearSelectionButton: document.querySelector("#maskClearSelectionButton"),
   maskEdgeExpand: document.querySelector("#maskEdgeExpand"),
   maskEdgeExpandValue: document.querySelector("#maskEdgeExpandValue"),
   maskFeather: document.querySelector("#maskFeather"),
@@ -87,6 +88,9 @@ const elements = {
   captureResizeMethod: document.querySelector("#captureResizeMethod"),
   captureScale: document.querySelector("#captureScale"),
   captureScaleValue: document.querySelector("#captureScaleValue"),
+  previewZoomOutButton: document.querySelector("#previewZoomOutButton"),
+  previewZoomInButton: document.querySelector("#previewZoomInButton"),
+  previewZoomValue: document.querySelector("#previewZoomValue"),
   capturePreviewCanvas: document.querySelector("#capturePreviewCanvas"),
   captureQualityNotice: document.querySelector("#captureQualityNotice"),
   captureResetButton: document.querySelector("#captureResetButton"),
@@ -170,6 +174,8 @@ const captureState = {
   baseMaskCanvas: null,
   maskHistory: [],
   brushLastPoint: null,
+  hoverPoint: null,
+  previewZoom: 3,
   previewDragging: false,
   previewPointerId: null,
   previewStartX: 0,
@@ -346,6 +352,11 @@ function finishViewportPan(event) {
 function handleGlobalKeyDown(event) {
   const zoomKey = ["+", "-", "=", "0"].includes(event.key);
   if ((event.ctrlKey || event.metaKey) && zoomKey) {
+    event.preventDefault();
+    return;
+  }
+  if (event.key === "Escape" && captureState.enabled && isMaskCaptureMode() && captureState.maskCanvas) {
+    clearCaptureObjectSelection();
     event.preventDefault();
     return;
   }
@@ -1048,7 +1059,15 @@ function fitImage() {
 function showCoordinates(event) {
   if (!state.image) return;
   if (captureState.enabled || panState.active || panState.spaceHeld) {
-    hideCoordinates();
+    elements.coordinateTooltip.hidden = true;
+    const showBrush = captureState.enabled && isMaskCaptureMode() && ["erase", "restore"].includes(captureState.tool);
+    if (showBrush) {
+      captureState.hoverPoint = getCanvasPixelCoordinates(elements.mapCanvas, event);
+      renderPreview();
+    } else if (captureState.hoverPoint) {
+      captureState.hoverPoint = null;
+      renderPreview();
+    }
     return;
   }
 
@@ -1077,6 +1096,13 @@ function showCoordinates(event) {
 
 function hideCoordinates() {
   elements.coordinateTooltip.hidden = true;
+  captureState.hoverPoint = null;
+}
+
+function handleSourcePointerLeave() {
+  const hadBrushCursor = Boolean(captureState.hoverPoint);
+  hideCoordinates();
+  if (hadBrushCursor) renderPreview();
 }
 
 function downloadBlobUrl(url, filename) {
@@ -1311,10 +1337,21 @@ function resetCaptureMask() {
   captureState.drawStart = null;
   captureState.drawPoints = [];
   captureState.brushLastPoint = null;
+  captureState.hoverPoint = null;
   captureState.offsetX = 0;
   captureState.offsetY = 0;
   if (elements.maskEdgeExpand) elements.maskEdgeExpand.value = "0";
   if (elements.maskFeather) elements.maskFeather.value = "0";
+}
+
+function clearCaptureObjectSelection() {
+  if (!captureState.maskCanvas && !captureState.selectionBounds) return;
+  resetCaptureMask();
+  captureState.tool = "draw";
+  captureState.scale = 1;
+  updateCaptureUi();
+  renderPreview();
+  showToast("Object selection cleared. Draw a new rectangle or lasso.");
 }
 
 function setCaptureMode(mode) {
@@ -1336,6 +1373,7 @@ function setMaskTool(tool) {
   if (!["draw", "erase", "restore", "background"].includes(tool)) return;
   if (tool !== "draw" && !captureState.maskCanvas) return;
   captureState.tool = tool;
+  captureState.hoverPoint = null;
   updateCaptureUi();
   renderPreview();
 }
@@ -1659,6 +1697,19 @@ function drawCaptureOverlay(context) {
       context.lineWidth = 2;
       context.stroke();
     }
+    if (captureState.hoverPoint && ["erase", "restore"].includes(captureState.tool)) {
+      const radius = Number(elements.maskBrushSize.value) / 2;
+      context.beginPath();
+      context.arc(captureState.hoverPoint.x, captureState.hoverPoint.y, radius, 0, Math.PI * 2);
+      context.fillStyle = captureState.tool === "erase" ? "rgba(255, 73, 106, .16)" : "rgba(81, 216, 154, .16)";
+      context.fill();
+      context.strokeStyle = "rgba(5, 8, 12, .92)";
+      context.lineWidth = 4;
+      context.stroke();
+      context.strokeStyle = captureState.tool === "erase" ? "#ff91a4" : "#75e5b0";
+      context.lineWidth = 2;
+      context.stroke();
+    }
     context.restore();
     return;
   }
@@ -1796,6 +1847,18 @@ function renderCapturedRegion() {
   return canvas;
 }
 
+function setCapturePreviewZoom(nextZoom) {
+  captureState.previewZoom = Math.min(8, Math.max(1, nextZoom));
+  renderCapturePreview();
+}
+
+function updateCapturePreviewZoomUi() {
+  const percent = Math.round(captureState.previewZoom * 100);
+  elements.previewZoomValue.textContent = percent + "%";
+  elements.previewZoomOutButton.disabled = captureState.previewZoom <= 1;
+  elements.previewZoomInButton.disabled = captureState.previewZoom >= 8;
+}
+
 function renderCapturePreview() {
   if (!state.image) return;
   const captured = renderCapturedRegion();
@@ -1806,7 +1869,10 @@ function renderCapturePreview() {
   context.imageSmoothingEnabled = elements.captureResizeMethod.value !== "pixel-art";
   context.imageSmoothingQuality = "high";
   context.drawImage(captured, 0, 0);
+  preview.style.width = Math.round(captured.width * captureState.previewZoom) + "px";
+  preview.style.height = Math.round(captured.height * captureState.previewZoom) + "px";
   preview.classList.toggle("is-pixel-art", elements.captureResizeMethod.value === "pixel-art");
+  updateCapturePreviewZoomUi();
 }
 
 function updateCaptureUi() {
@@ -1840,6 +1906,7 @@ function updateCaptureUi() {
   });
   elements.maskUndoButton.disabled = !captureState.maskHistory.length;
   elements.maskResetButton.disabled = !captureState.baseMaskCanvas;
+  elements.maskClearSelectionButton.disabled = !hasMask;
   [
     [elements.maskRedrawButton, "draw"],
     [elements.maskEraseButton, "erase"],
@@ -1851,8 +1918,12 @@ function updateCaptureUi() {
   elements.maskBrushSizeValue.textContent = elements.maskBrushSize.value + " px";
   elements.maskToleranceValue.textContent = elements.maskTolerance.value;
   const edgeExpand = Number(elements.maskEdgeExpand.value);
-  elements.maskEdgeExpandValue.textContent = (edgeExpand > 0 ? "+" : "") + edgeExpand + " px";
-  elements.maskFeatherValue.textContent = elements.maskFeather.value + " px";
+  elements.maskEdgeExpandValue.textContent = edgeExpand > 0
+    ? "+" + edgeExpand + " px (expand)"
+    : edgeExpand < 0 ? edgeExpand + " px (trim)" : "Unchanged";
+  elements.maskFeatherValue.textContent = Number(elements.maskFeather.value)
+    ? elements.maskFeather.value + " px"
+    : "Hard edge";
   elements.mapCanvas.classList.toggle("is-mask-drawing", captureState.enabled && isMaskCaptureMode() && captureState.tool === "draw");
   elements.mapCanvas.classList.toggle("is-mask-brushing", captureState.enabled && isMaskCaptureMode() && ["erase", "restore"].includes(captureState.tool));
 
@@ -2589,7 +2660,7 @@ elements.zoomPresetButtons.forEach((button) => {
 });
 elements.fitButton.addEventListener("click", fitImage);
 elements.mapCanvas.addEventListener("pointermove", showCoordinates);
-elements.mapCanvas.addEventListener("pointerleave", hideCoordinates);
+elements.mapCanvas.addEventListener("pointerleave", handleSourcePointerLeave);
 elements.exportGridButton.addEventListener("click", exportGriddedPng);
 elements.exportOriginalButton.addEventListener("click", exportOriginal);
 elements.autoFitImageButton.addEventListener("click", autoFitImageToGrid);
@@ -2614,6 +2685,7 @@ elements.maskBrushSize.addEventListener("input", updateCaptureUi);
 elements.maskTolerance.addEventListener("input", updateCaptureUi);
 elements.maskUndoButton.addEventListener("click", undoMaskEdit);
 elements.maskResetButton.addEventListener("click", resetMaskEdits);
+elements.maskClearSelectionButton.addEventListener("click", clearCaptureObjectSelection);
 [elements.maskEdgeExpand, elements.maskFeather].forEach((input) => {
   input.addEventListener("input", () => {
     updateCaptureUi();
@@ -2633,6 +2705,8 @@ elements.captureResizeMethod.addEventListener("change", () => {
   renderPreview();
 });
 elements.captureScale.addEventListener("input", () => setCaptureScale(Number(elements.captureScale.value) / 100));
+elements.previewZoomOutButton.addEventListener("click", () => setCapturePreviewZoom(captureState.previewZoom - .5));
+elements.previewZoomInButton.addEventListener("click", () => setCapturePreviewZoom(captureState.previewZoom + .5));
 elements.captureResetButton.addEventListener("click", resetCapturePosition);
 elements.capturePlaceSelectedButton.addEventListener("click", placeCaptureAtSelectedDestination);
 elements.captureAddNextButton.addEventListener("click", addCaptureToNextEmptyRegion);
