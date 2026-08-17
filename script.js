@@ -1,6 +1,7 @@
 "use strict";
 
 const MZ_TILE_SIZE = 48;
+const RPG_MAKER_PALETTE_COLUMNS = 8;
 const TILESET_TEMPLATE_PATH = "assets/grid-template-tileset-b.png";
 
 const elements = {
@@ -1461,6 +1462,7 @@ function applyRecommendedCaptureFootprint(bounds) {
   captureState.rows = recommendation.rows;
   elements.captureColumns.value = String(recommendation.columns);
   elements.captureRows.value = String(recommendation.rows);
+  snapBuilderDestinationForFootprint(recommendation.columns, recommendation.rows);
   return recommendation;
 }
 
@@ -1844,6 +1846,7 @@ function updateCaptureDimensions() {
   captureState.rows = clampInteger(elements.captureRows.value, 1, 16, 1);
   elements.captureColumns.value = captureState.columns;
   elements.captureRows.value = captureState.rows;
+  snapBuilderDestinationForFootprint(captureState.columns, captureState.rows, { announce: true });
   if (isMaskCaptureMode() && captureState.selectionBounds) {
     applyCapturePlacementMode(elements.capturePlacementMode.value, { announce: false });
     return;
@@ -1863,6 +1866,7 @@ function previewCaptureDimensions() {
   }
   captureState.columns = columns;
   captureState.rows = rows;
+  snapBuilderDestinationForFootprint(columns, rows);
   if (isMaskCaptureMode() && captureState.selectionBounds) {
     applyCapturePlacementMode(elements.capturePlacementMode.value, { announce: false });
     return;
@@ -2162,6 +2166,10 @@ function updateCaptureUi() {
     elements.captureQualityNotice.textContent =
       "Source " + Math.round(sourceRect.width) + "\u00D7" + Math.round(sourceRect.height) +
       " px \u2192 output " + output.width + "\u00D7" + output.height + " px at " + scalePercent + "%. " + quality;
+  }
+  if (captureState.columns > RPG_MAKER_PALETTE_COLUMNS) {
+    elements.captureQualityNotice.textContent +=
+      " RPG Maker palette warning: reduce the object to 8 tiles wide or split it before placement.";
   }
   renderCapturePreview();
   updateSelectionUi();
@@ -2495,6 +2503,7 @@ function finishSourceRectangle(event) {
   if (!selectionState.dragStart) return;
   const tile = getSourceTileFromEvent(event) || selectionState.dragStart;
   selectionState.rectangle = normalizeRectangle(selectionState.dragStart, tile);
+  snapBuilderDestinationForFootprint(selectionState.rectangle.width, selectionState.rectangle.height);
   selectionState.dragStart = null;
   selectionState.dragPreview = null;
   if (elements.mapCanvas.hasPointerCapture(event.pointerId)) elements.mapCanvas.releasePointerCapture(event.pointerId);
@@ -2545,13 +2554,41 @@ function getOccupiedCount() {
   return builderState.cells.reduce((count, cell) => count + (cell ? 1 : 0), 0);
 }
 
+function updateBuilderDestinationText() {
+  if (builderState.destination === null) {
+    elements.builderDestination.textContent = "None";
+    return;
+  }
+  const destinationX = builderState.destination % builderState.columns;
+  const destinationY = Math.floor(builderState.destination / builderState.columns);
+  const paletteHalf = destinationX < RPG_MAKER_PALETTE_COLUMNS ? "left half" : "right half";
+  elements.builderDestination.textContent = `X:${destinationX} Y:${destinationY} · ${paletteHalf}`;
+}
+
+function snapBuilderDestinationForFootprint(width, height, { announce = false } = {}) {
+  if (builderState.destination === null || !builderState.columns || !builderState.rows) return false;
+  if (width > RPG_MAKER_PALETTE_COLUMNS || height > builderState.rows) return false;
+  const currentX = builderState.destination % builderState.columns;
+  const currentY = Math.floor(builderState.destination / builderState.columns);
+  const safeX = snapToPaletteHalf(currentX, width);
+  const safeY = Math.min(currentY, builderState.rows - height);
+  if (safeX === currentX && safeY === currentY) return false;
+  builderState.destination = safeY * builderState.columns + safeX;
+  updateBuilderDestinationText();
+  if (builderState.templateImage) renderTileset();
+  if (announce) {
+    setBuilderNotice(
+      `Destination adjusted to X:${safeX} Y:${safeY} so the ${width}×${height} region stays together in one palette half.`,
+    );
+  }
+  return true;
+}
+
 function updateBuilderUi() {
   const occupied = getOccupiedCount();
   elements.builderOccupancy.textContent = occupied + " / " + (builderState.columns * builderState.rows) + " occupied";
   elements.builderTabCount.textContent = String(occupied);
-  elements.builderDestination.textContent = builderState.destination === null
-    ? "None"
-    : "X:" + (builderState.destination % builderState.columns) + " Y:" + Math.floor(builderState.destination / builderState.columns);
+  updateBuilderDestinationText();
   elements.removeDestinationButton.disabled =
     builderState.destination === null || !builderState.cells[builderState.destination];
   elements.clearTilesetButton.disabled = occupied === 0;
@@ -2570,15 +2607,39 @@ function renderTileset() {
   drawGrid(tilesetContext, builderState.width, builderState.height, {
     size: MZ_TILE_SIZE, opacity: .72, thickness: 1, color: "#a600ff",
   });
+  const paletteDividerX = RPG_MAKER_PALETTE_COLUMNS * MZ_TILE_SIZE;
+  if (paletteDividerX < builderState.width) {
+    tilesetContext.save();
+    tilesetContext.strokeStyle = "rgba(4, 8, 14, .9)";
+    tilesetContext.lineWidth = 6;
+    tilesetContext.beginPath();
+    tilesetContext.moveTo(paletteDividerX, 0);
+    tilesetContext.lineTo(paletteDividerX, builderState.height);
+    tilesetContext.stroke();
+    tilesetContext.strokeStyle = "#57d4ff";
+    tilesetContext.lineWidth = 2;
+    tilesetContext.setLineDash([10, 7]);
+    tilesetContext.stroke();
+    tilesetContext.restore();
+  }
   if (builderState.destination !== null) {
     const x = builderState.destination % builderState.columns * MZ_TILE_SIZE;
     const y = Math.floor(builderState.destination / builderState.columns) * MZ_TILE_SIZE;
+    const footprint = getActivePlacementFootprint();
+    const footprintWidth = footprint ? footprint.width : 1;
+    const footprintHeight = footprint ? footprint.height : 1;
+    const fits = isPaletteSafeRectangle(x / MZ_TILE_SIZE, y / MZ_TILE_SIZE, footprintWidth, footprintHeight);
     tilesetContext.save();
-    tilesetContext.fillStyle = "rgba(255, 211, 90, .25)";
-    tilesetContext.fillRect(x, y, MZ_TILE_SIZE, MZ_TILE_SIZE);
-    tilesetContext.strokeStyle = "#ffdc67";
+    tilesetContext.fillStyle = fits ? "rgba(255, 211, 90, .2)" : "rgba(255, 73, 106, .2)";
+    tilesetContext.fillRect(x, y, footprintWidth * MZ_TILE_SIZE, footprintHeight * MZ_TILE_SIZE);
+    tilesetContext.strokeStyle = fits ? "#ffdc67" : "#ff718b";
     tilesetContext.lineWidth = 3;
-    tilesetContext.strokeRect(x + 1.5, y + 1.5, MZ_TILE_SIZE - 3, MZ_TILE_SIZE - 3);
+    tilesetContext.strokeRect(
+      x + 1.5,
+      y + 1.5,
+      footprintWidth * MZ_TILE_SIZE - 3,
+      footprintHeight * MZ_TILE_SIZE - 3,
+    );
     tilesetContext.restore();
   }
 }
@@ -2628,6 +2689,40 @@ function getSelectionPayload() {
     kind: "individual",
     tiles: selectionState.individualTiles.map((tile) => ({ sourceX: tile.x, sourceY: tile.y })),
   };
+}
+
+function getActivePlacementFootprint() {
+  if (captureState.enabled && hasCapturedObject()) {
+    return { width: captureState.columns, height: captureState.rows };
+  }
+  const payload = getSelectionPayload();
+  return payload && payload.kind === "rectangle"
+    ? { width: payload.width, height: payload.height }
+    : null;
+}
+
+function isInsidePaletteHalf(startX, width) {
+  if (width > RPG_MAKER_PALETTE_COLUMNS) return false;
+  const halfStart = Math.floor(startX / RPG_MAKER_PALETTE_COLUMNS) * RPG_MAKER_PALETTE_COLUMNS;
+  return startX + width <= halfStart + RPG_MAKER_PALETTE_COLUMNS;
+}
+
+function isPaletteSafeRectangle(startX, startY, width, height) {
+  return startX >= 0 && startY >= 0 &&
+    startX + width <= builderState.columns && startY + height <= builderState.rows &&
+    isInsidePaletteHalf(startX, width);
+}
+
+function snapToPaletteHalf(startX, width) {
+  if (width <= 1 || width > RPG_MAKER_PALETTE_COLUMNS) return startX;
+  const halfStart = Math.floor(startX / RPG_MAKER_PALETTE_COLUMNS) * RPG_MAKER_PALETTE_COLUMNS;
+  return Math.min(startX, halfStart + RPG_MAKER_PALETTE_COLUMNS - width);
+}
+
+function getPaletteWidthWarning(width) {
+  return width > RPG_MAKER_PALETTE_COLUMNS
+    ? `RPG Maker uses 8-column B–E palette halves. Reduce this region from ${width} tiles wide to 8 or fewer.`
+    : "";
 }
 
 // Copy exactly one logical tile into its own 48px backing canvas. Supplying
@@ -2681,7 +2776,7 @@ function getCapturedTiles() {
 }
 
 function getCaptureTargets(startX, startY) {
-  if (startX + captureState.columns > builderState.columns || startY + captureState.rows > builderState.rows) {
+  if (!isPaletteSafeRectangle(startX, startY, captureState.columns, captureState.rows)) {
     return null;
   }
   return getCapturedTiles().map((tile) => ({
@@ -2694,20 +2789,35 @@ function placeCaptureAtSelectedDestination() {
   if (!captureState.enabled || builderState.destination === null || !builderState.templateImage) return;
   const startX = builderState.destination % builderState.columns;
   const startY = Math.floor(builderState.destination / builderState.columns);
+  const widthWarning = getPaletteWidthWarning(captureState.columns);
+  if (widthWarning) {
+    setBuilderNotice(widthWarning, true);
+    showToast(widthWarning, true);
+    return;
+  }
   const targets = getCaptureTargets(startX, startY);
   if (!targets) {
     setBuilderNotice(
-      "The " + captureState.columns + "\u00D7" + captureState.rows + " capture does not fit at that destination.",
+      "The region does not fit inside this 8-column palette half. Choose another destination.",
       true,
     );
-    showToast("The captured region does not fit at the selected destination.", true);
+    showToast("Choose a destination where the complete object stays inside one 8-column half.", true);
     return;
   }
-  commitPlacement(targets, "Placed captured " + captureState.columns + "\u00D7" + captureState.rows + " region.");
+  commitPlacement(
+    targets,
+    "Placed captured " + captureState.columns + "\u00D7" + captureState.rows + " region inside one RPG Maker palette half.",
+  );
 }
 
 function addCaptureToNextEmptyRegion() {
   if (!captureState.enabled || !builderState.templateImage) return;
+  const widthWarning = getPaletteWidthWarning(captureState.columns);
+  if (widthWarning) {
+    setBuilderNotice(widthWarning, true);
+    showToast(widthWarning, true);
+    return;
+  }
   const start = findEmptyRectangle(captureState.columns, captureState.rows);
   if (!start) {
     setBuilderNotice(
@@ -2718,7 +2828,10 @@ function addCaptureToNextEmptyRegion() {
     return;
   }
   const targets = getCaptureTargets(start.x, start.y);
-  commitPlacement(targets, "Added captured " + captureState.columns + "\u00D7" + captureState.rows + " region.");
+  commitPlacement(
+    targets,
+    "Added captured " + captureState.columns + "\u00D7" + captureState.rows + " region inside one RPG Maker palette half.",
+  );
 }
 
 function commitPlacement(targets, message) {
@@ -2746,8 +2859,13 @@ function placeAtSelectedDestination() {
   const y = Math.floor(builderState.destination / builderState.columns);
   let targets;
   if (payload.kind === "rectangle") {
-    if (x + payload.width > builderState.columns || y + payload.height > builderState.rows) {
-      setBuilderNotice("The " + payload.width + "\u00D7" + payload.height + " region does not fit here. Nothing was placed.", true);
+    const widthWarning = getPaletteWidthWarning(payload.width);
+    if (widthWarning) {
+      setBuilderNotice(widthWarning, true);
+      return;
+    }
+    if (!isPaletteSafeRectangle(x, y, payload.width, payload.height)) {
+      setBuilderNotice("The region must fit completely inside one 8-column RPG Maker palette half.", true);
       return;
     }
     targets = payload.tiles.map((tile) => ({
@@ -2765,8 +2883,10 @@ function placeAtSelectedDestination() {
 }
 
 function findEmptyRectangle(width, height) {
+  if (width > RPG_MAKER_PALETTE_COLUMNS) return null;
   for (let y = 0; y <= builderState.rows - height; y += 1) {
     for (let x = 0; x <= builderState.columns - width; x += 1) {
+      if (!isInsidePaletteHalf(x, width)) continue;
       let fits = true;
       for (let dy = 0; dy < height && fits; dy += 1) {
         for (let dx = 0; dx < width; dx += 1) {
@@ -2787,6 +2907,11 @@ function addToNextAvailableSlots() {
   if (!payload) return;
   let targets;
   if (payload.kind === "rectangle") {
+    const widthWarning = getPaletteWidthWarning(payload.width);
+    if (widthWarning) {
+      setBuilderNotice(widthWarning, true);
+      return;
+    }
     const start = findEmptyRectangle(payload.width, payload.height);
     if (!start) {
       setBuilderNotice("No empty " + payload.width + "\u00D7" + payload.height + " region is available.", true);
@@ -2811,10 +2936,18 @@ function selectBuilderDestination(event) {
   if (isPanIntent(event)) return;
   if (!builderState.templateImage) return;
   const pixel = getCanvasPixelCoordinates(elements.tilesetCanvas, event);
-  const x = Math.floor(pixel.x / MZ_TILE_SIZE);
+  const clickedX = Math.floor(pixel.x / MZ_TILE_SIZE);
   const y = Math.floor(pixel.y / MZ_TILE_SIZE);
+  const footprint = getActivePlacementFootprint();
+  const x = footprint ? snapToPaletteHalf(clickedX, footprint.width) : clickedX;
   builderState.destination = y * builderState.columns + x;
-  setBuilderNotice("");
+  const widthWarning = footprint ? getPaletteWidthWarning(footprint.width) : "";
+  if (widthWarning) setBuilderNotice(widthWarning, true);
+  else if (x !== clickedX) {
+    setBuilderNotice(
+      `Destination adjusted from X:${clickedX} to X:${x} so the complete object stays inside one 8-column palette half.`,
+    );
+  } else setBuilderNotice("");
   renderTileset();
   updateBuilderUi();
 }
