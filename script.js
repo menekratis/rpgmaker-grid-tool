@@ -1215,9 +1215,11 @@ function resetDragOverlay() {
 // is always an original-image coordinate.
 function getCanvasPixelCoordinates(canvas, event) {
   const rect = canvas.getBoundingClientRect();
+  const pointerX = event.clientX - rect.left;
+  const pointerY = event.clientY - rect.top;
   return {
-    x: Math.min(canvas.width - 1, Math.max(0, Math.floor(event.offsetX * canvas.width / rect.width))),
-    y: Math.min(canvas.height - 1, Math.max(0, Math.floor(event.offsetY * canvas.height / rect.height))),
+    x: Math.min(canvas.width - 1, Math.max(0, Math.floor(pointerX * canvas.width / rect.width))),
+    y: Math.min(canvas.height - 1, Math.max(0, Math.floor(pointerY * canvas.height / rect.height))),
   };
 }
 
@@ -1547,10 +1549,11 @@ function smartSelectObject(seed, { add = false, subtract = false } = {}) {
   }
 
   if (captureState.maskCanvas) pushMaskHistory();
-  const mask = (add || subtract) && captureState.maskCanvas
-    ? cloneCanvas(captureState.maskCanvas)
-    : document.createElement("canvas");
-  if (!mask.width) {
+  let mask;
+  if ((add || subtract) && captureState.maskCanvas) {
+    mask = cloneCanvas(captureState.maskCanvas);
+  } else {
+    mask = document.createElement("canvas");
     mask.width = dimensions.width;
     mask.height = dimensions.height;
   }
