@@ -61,6 +61,7 @@ const elements = {
   captureOutputBadge: document.querySelector("#captureOutputBadge"),
   captureModeHint: document.querySelector("#captureModeHint"),
   captureFrameModeButton: document.querySelector("#captureFrameModeButton"),
+  captureSmartModeButton: document.querySelector("#captureSmartModeButton"),
   captureRectangleModeButton: document.querySelector("#captureRectangleModeButton"),
   captureLassoModeButton: document.querySelector("#captureLassoModeButton"),
   maskControls: document.querySelector("#maskControls"),
@@ -139,6 +140,7 @@ const state = {
   zoom: 1,
   dragDepth: 0,
   toastTimer: null,
+  hasTransparentPixels: null,
 };
 
 
@@ -283,7 +285,8 @@ function initializeCollapsibleSections() {
     while (heading.nextSibling) body.append(heading.nextSibling);
     section.append(body);
 
-    const collapsed = getSavedSectionCollapsed(section.dataset.collapsible, section.dataset.collapsible !== "grid-settings");
+    const startsOpen = ["grid-settings", "image-details"].includes(section.dataset.collapsible);
+    const collapsed = getSavedSectionCollapsed(section.dataset.collapsible, !startsOpen);
     setSectionCollapsed(section, collapsed, { persist: false });
     button.addEventListener("click", () => setSectionCollapsed(section, !section.classList.contains("is-collapsed")));
   });
@@ -955,6 +958,7 @@ function loadImageFile(file) {
     state.file = file;
     state.image = nextImage;
     state.autoFitCanvas = null;
+    state.hasTransparentPixels = null;
     state.objectUrl = nextObjectUrl;
     state.fitToViewport = false;
     state.zoom = 1;
@@ -1241,7 +1245,7 @@ function getCaptureOutputSize() {
 }
 
 function isMaskCaptureMode() {
-  return captureState.mode === "rectangle" || captureState.mode === "lasso";
+  return ["smart", "rectangle", "lasso"].includes(captureState.mode);
 }
 
 function hasCapturedObject() {
@@ -1351,11 +1355,11 @@ function clearCaptureObjectSelection() {
   captureState.scale = 1;
   updateCaptureUi();
   renderPreview();
-  showToast("Object selection cleared. Draw a new rectangle or lasso.");
+  showToast("Object selection cleared. Click an object or draw a new selection.");
 }
 
 function setCaptureMode(mode) {
-  if (!["frame", "rectangle", "lasso"].includes(mode) || captureState.mode === mode) return;
+  if (!["frame", "smart", "rectangle", "lasso"].includes(mode) || captureState.mode === mode) return;
   captureState.mode = mode;
   captureState.tool = "draw";
   captureState.dragging = false;
@@ -1380,14 +1384,28 @@ function setMaskTool(tool) {
 
 function pushMaskHistory() {
   if (!captureState.maskCanvas) return;
-  captureState.maskHistory.push(cloneCanvas(captureState.maskCanvas));
+  captureState.maskHistory.push({
+    maskCanvas: cloneCanvas(captureState.maskCanvas),
+    baseMaskCanvas: cloneCanvas(captureState.baseMaskCanvas),
+    selectionBounds: captureState.selectionBounds ? { ...captureState.selectionBounds } : null,
+    scale: captureState.scale,
+    offsetX: captureState.offsetX,
+    offsetY: captureState.offsetY,
+    placementMode: elements.capturePlacementMode.value,
+  });
   if (captureState.maskHistory.length > 8) captureState.maskHistory.shift();
 }
 
 function undoMaskEdit() {
   const previous = captureState.maskHistory.pop();
   if (!previous) return;
-  captureState.maskCanvas = previous;
+  captureState.maskCanvas = previous.maskCanvas;
+  captureState.baseMaskCanvas = previous.baseMaskCanvas;
+  captureState.selectionBounds = previous.selectionBounds;
+  captureState.scale = previous.scale;
+  captureState.offsetX = previous.offsetX;
+  captureState.offsetY = previous.offsetY;
+  elements.capturePlacementMode.value = previous.placementMode;
   updateCaptureUi();
   renderPreview();
 }
@@ -1417,6 +1435,160 @@ function getPointBounds(points) {
     { x: Math.min(...xs), y: Math.min(...ys) },
     { x: Math.max(...xs), y: Math.max(...ys) },
   );
+}
+
+function getMaskContentBounds(maskCanvas) {
+  if (!maskCanvas) return null;
+  const context = maskCanvas.getContext("2d", { willReadFrequently: true });
+  const pixels = context.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+  let left = maskCanvas.width;
+  let top = maskCanvas.height;
+  let right = -1;
+  let bottom = -1;
+  for (let y = 0; y < maskCanvas.height; y += 1) {
+    for (let x = 0; x < maskCanvas.width; x += 1) {
+      if (pixels[(y * maskCanvas.width + x) * 4 + 3] === 0) continue;
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  return right < left ? null : { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+}
+
+function sourceHasTransparentPixels() {
+  if (!state.image) return false;
+  if (state.hasTransparentPixels !== null) return state.hasTransparentPixels;
+  const canvas = document.createElement("canvas");
+  canvas.width = state.image.naturalWidth;
+  canvas.height = state.image.naturalHeight;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(state.image, 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  let transparentPixels = 0;
+  const requiredPixels = Math.max(16, Math.ceil(canvas.width * canvas.height * .001));
+  for (let index = 3; index < pixels.length; index += 4) {
+    if (pixels[index] < 16) {
+      transparentPixels += 1;
+      if (transparentPixels >= requiredPixels) break;
+    }
+  }
+  state.hasTransparentPixels = transparentPixels >= requiredPixels;
+  return state.hasTransparentPixels;
+}
+
+function findNearbyVisiblePixel(pixels, width, height, seed, radius = 6) {
+  const startX = Math.max(0, Math.min(width - 1, Math.floor(seed.x)));
+  const startY = Math.max(0, Math.min(height - 1, Math.floor(seed.y)));
+  let best = null;
+  let bestDistance = Infinity;
+  for (let y = Math.max(0, startY - radius); y <= Math.min(height - 1, startY + radius); y += 1) {
+    for (let x = Math.max(0, startX - radius); x <= Math.min(width - 1, startX + radius); x += 1) {
+      if (pixels[(y * width + x) * 4 + 3] < 16) continue;
+      const distance = (x - startX) ** 2 + (y - startY) ** 2;
+      if (distance < bestDistance) {
+        best = { x, y };
+        bestDistance = distance;
+      }
+    }
+  }
+  return best;
+}
+
+function smartSelectObject(seed, { add = false, subtract = false } = {}) {
+  if (!sourceHasTransparentPixels()) {
+    showToast("Smart Select needs a transparent background. Use Rectangle or Lasso for this image.", true);
+    return;
+  }
+  if (subtract && !captureState.maskCanvas) {
+    showToast("Select an object before removing a piece from it.", true);
+    return;
+  }
+
+  const source = getActiveSource();
+  const dimensions = getSourceDimensions();
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = dimensions.width;
+  sourceCanvas.height = dimensions.height;
+  const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
+  sourceContext.drawImage(source, 0, 0, dimensions.width, dimensions.height);
+  const sourcePixels = sourceContext.getImageData(0, 0, dimensions.width, dimensions.height).data;
+  const visibleSeed = findNearbyVisiblePixel(sourcePixels, dimensions.width, dimensions.height, seed);
+  if (!visibleSeed) {
+    showToast("No object found here. Click closer to a visible part of the artwork.", true);
+    return;
+  }
+
+  const total = dimensions.width * dimensions.height;
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+  const seedIndex = visibleSeed.y * dimensions.width + visibleSeed.x;
+  queue[tail++] = seedIndex;
+  visited[seedIndex] = 1;
+  while (head < tail) {
+    const pixelIndex = queue[head++];
+    const x = pixelIndex % dimensions.width;
+    const y = Math.floor(pixelIndex / dimensions.width);
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        if (!offsetX && !offsetY) continue;
+        const nextX = x + offsetX;
+        const nextY = y + offsetY;
+        if (nextX < 0 || nextX >= dimensions.width || nextY < 0 || nextY >= dimensions.height) continue;
+        const nextIndex = nextY * dimensions.width + nextX;
+        if (visited[nextIndex] || sourcePixels[nextIndex * 4 + 3] < 16) continue;
+        visited[nextIndex] = 1;
+        queue[tail++] = nextIndex;
+      }
+    }
+  }
+
+  if (captureState.maskCanvas) pushMaskHistory();
+  const mask = (add || subtract) && captureState.maskCanvas
+    ? cloneCanvas(captureState.maskCanvas)
+    : document.createElement("canvas");
+  if (!mask.width) {
+    mask.width = dimensions.width;
+    mask.height = dimensions.height;
+  }
+  const maskContext = mask.getContext("2d", { willReadFrequently: true });
+  const maskPixels = maskContext.getImageData(0, 0, dimensions.width, dimensions.height);
+  for (let index = 0; index < tail; index += 1) {
+    const dataIndex = queue[index] * 4;
+    const value = subtract ? 0 : 255;
+    maskPixels.data[dataIndex] = value;
+    maskPixels.data[dataIndex + 1] = value;
+    maskPixels.data[dataIndex + 2] = value;
+    maskPixels.data[dataIndex + 3] = value;
+  }
+  maskContext.putImageData(maskPixels, 0, 0);
+  const bounds = getMaskContentBounds(mask);
+  captureState.previewBounds = null;
+  captureState.drawStart = null;
+  captureState.drawPoints = [];
+  captureState.offsetX = 0;
+  captureState.offsetY = 0;
+  captureState.tool = "draw";
+  if (!bounds) {
+    captureState.maskCanvas = null;
+    captureState.baseMaskCanvas = null;
+    captureState.selectionBounds = null;
+    updateCaptureUi();
+    renderPreview();
+    showToast("The selected piece was removed. Undo Mask restores it.");
+    return;
+  }
+
+  captureState.maskCanvas = mask;
+  captureState.baseMaskCanvas = cloneCanvas(mask);
+  captureState.selectionBounds = bounds;
+  elements.capturePlacementMode.value = "fit";
+  applyCapturePlacementMode("fit", { announce: false });
+  const action = subtract ? "removed" : add ? "added" : "selected";
+  showToast(`Object ${action}. Shift-click adds another piece; Alt-click removes one.`);
 }
 
 function finalizeMaskSelection() {
@@ -1892,11 +2064,14 @@ function updateCaptureUi() {
   elements.autoFitObjectButton.disabled = !isMaskCaptureMode() || !captureState.selectionBounds;
   elements.capturePlacementMode.disabled = !isMaskCaptureMode() || !captureState.selectionBounds;
   elements.captureFrameModeButton.classList.toggle("is-active", captureState.mode === "frame");
+  elements.captureSmartModeButton.classList.toggle("is-active", captureState.mode === "smart");
   elements.captureRectangleModeButton.classList.toggle("is-active", captureState.mode === "rectangle");
   elements.captureLassoModeButton.classList.toggle("is-active", captureState.mode === "lasso");
   elements.maskControls.hidden = !isMaskCaptureMode();
   elements.captureModeHint.textContent = captureState.mode === "frame"
     ? "Move and resize a tile-shaped frame."
+    : captureState.mode === "smart"
+      ? "Click an object on a transparent background. Shift-click adds; Alt-click removes."
     : captureState.mode === "rectangle"
       ? "Drag a free rectangle around one object."
       : "Draw around an irregular object and release to close the outline.";
@@ -1936,7 +2111,9 @@ function updateCaptureUi() {
   else quality = "Resize amount is within a practical range.";
   if (isMaskCaptureMode()) {
     if (!captureState.selectionBounds) {
-      elements.captureQualityNotice.textContent = "Draw around an object on the source image to create a transparent selection.";
+      elements.captureQualityNotice.textContent = captureState.mode === "smart"
+        ? "Click a visible object to select its connected pixels automatically."
+        : "Draw around an object on the source image to create a transparent selection.";
     } else {
       const bounds = captureState.selectionBounds;
       const placement = elements.capturePlacementMode.value;
@@ -1978,6 +2155,11 @@ function beginCaptureDrag(event) {
   if (!captureState.enabled || !state.image) return false;
   const pixel = getCanvasPixelCoordinates(elements.mapCanvas, event);
   if (isMaskCaptureMode()) {
+    if (captureState.mode === "smart" && captureState.tool === "draw") {
+      smartSelectObject(pixel, { add: event.shiftKey, subtract: event.altKey });
+      event.preventDefault();
+      return true;
+    }
     if (captureState.tool === "background") {
       removeConnectedBackground(pixel);
       event.preventDefault();
@@ -2675,6 +2857,7 @@ elements.rectangleSelectionButton.addEventListener("click", () => setSelectionTy
 elements.clearSelectionButton.addEventListener("click", clearSourceSelection);
 elements.captureToggleButton.addEventListener("click", () => setCaptureEnabled(!captureState.enabled));
 elements.captureFrameModeButton.addEventListener("click", () => setCaptureMode("frame"));
+elements.captureSmartModeButton.addEventListener("click", () => setCaptureMode("smart"));
 elements.captureRectangleModeButton.addEventListener("click", () => setCaptureMode("rectangle"));
 elements.captureLassoModeButton.addEventListener("click", () => setCaptureMode("lasso"));
 elements.maskRedrawButton.addEventListener("click", () => setMaskTool("draw"));

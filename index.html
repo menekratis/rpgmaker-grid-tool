@@ -45,7 +45,7 @@
             <p class="helper-text">Or drop an image into the preview area.</p>
           </section>
 
-          <section class="panel-section" aria-labelledby="imageDetailsHeading">
+          <section class="panel-section" data-collapsible="image-details" aria-labelledby="imageDetailsHeading">
             <h2 id="imageDetailsHeading">Image details</h2>
             <div class="stat-row">
               <span>Dimensions</span>
@@ -162,6 +162,7 @@
 
               <div class="segmented-control capture-mode-control" role="group" aria-label="Object selection method">
                 <button id="captureFrameModeButton" class="segment-button is-active" type="button">Frame</button>
+                <button id="captureSmartModeButton" class="segment-button" type="button">Smart</button>
                 <button id="captureRectangleModeButton" class="segment-button" type="button">Rectangle</button>
                 <button id="captureLassoModeButton" class="segment-button" type="button">Lasso</button>
               </div>
