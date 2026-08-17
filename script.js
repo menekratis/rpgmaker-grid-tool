@@ -1439,6 +1439,31 @@ function getPointBounds(points) {
   );
 }
 
+function getRecommendedCaptureFootprint(bounds) {
+  const aspectRatio = bounds.width / bounds.height;
+  let columns;
+  let rows;
+  if (bounds.width >= bounds.height) {
+    columns = Math.max(1, Math.min(8, Math.round(bounds.width / MZ_TILE_SIZE)));
+    rows = Math.max(1, Math.min(16, Math.round(columns / aspectRatio)));
+    if (aspectRatio >= 1.35 && columns === rows && columns < 8) columns += 1;
+  } else {
+    rows = Math.max(1, Math.min(16, Math.round(bounds.height / MZ_TILE_SIZE)));
+    columns = Math.max(1, Math.min(8, Math.round(rows * aspectRatio)));
+    if (1 / aspectRatio >= 1.35 && columns === rows && rows < 16) rows += 1;
+  }
+  return { columns, rows };
+}
+
+function applyRecommendedCaptureFootprint(bounds) {
+  const recommendation = getRecommendedCaptureFootprint(bounds);
+  captureState.columns = recommendation.columns;
+  captureState.rows = recommendation.rows;
+  elements.captureColumns.value = String(recommendation.columns);
+  elements.captureRows.value = String(recommendation.rows);
+  return recommendation;
+}
+
 function getMaskContentBounds(maskCanvas) {
   if (!maskCanvas) return null;
   const context = maskCanvas.getContext("2d", { willReadFrequently: true });
@@ -1588,10 +1613,14 @@ function smartSelectObject(seed, { add = false, subtract = false } = {}) {
   captureState.maskCanvas = mask;
   captureState.baseMaskCanvas = cloneCanvas(mask);
   captureState.selectionBounds = bounds;
+  const recommendation = applyRecommendedCaptureFootprint(bounds);
   elements.capturePlacementMode.value = "fit";
   applyCapturePlacementMode("fit", { announce: false });
   const action = subtract ? "removed" : add ? "added" : "selected";
-  showToast(`Object ${action}. Shift-click adds another piece; Alt-click removes one.`);
+  showToast(
+    `Object ${action}. Recommended ${recommendation.columns}×${recommendation.rows} tiles. ` +
+    "Shift-click adds another piece; Alt-click removes one.",
+  );
 }
 
 function finalizeMaskSelection() {
@@ -1625,10 +1654,14 @@ function finalizeMaskSelection() {
   captureState.drawPoints = [];
   captureState.offsetX = 0;
   captureState.offsetY = 0;
+  const recommendation = applyRecommendedCaptureFootprint(captureState.selectionBounds);
   elements.capturePlacementMode.value = "fit";
   applyCapturePlacementMode("fit", { announce: false });
   setMaskTool("erase");
-  showToast("Object selected. Clean the mask if needed, then fit and place it.");
+  showToast(
+    `Object selected. Recommended ${recommendation.columns}×${recommendation.rows} tiles. ` +
+    "You can change the tile size before placing it.",
+  );
   return true;
 }
 
