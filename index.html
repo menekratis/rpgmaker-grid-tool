@@ -172,6 +172,7 @@
                   <button id="maskRedrawButton" class="tool-button is-active" type="button">Draw</button>
                   <button id="maskEraseButton" class="tool-button" type="button" disabled>Erase</button>
                   <button id="maskRestoreButton" class="tool-button" type="button" disabled>Restore</button>
+                  <button id="maskSplitButton" class="tool-button" type="button" disabled>Split</button>
                   <button id="maskBackgroundButton" class="tool-button" type="button" disabled>Remove BG</button>
                 </div>
 
@@ -181,6 +182,7 @@
                     <output id="maskBrushSizeValue" for="maskBrushSize">24 px</output>
                     <input id="maskBrushSize" type="range" min="4" max="120" step="2" value="24" />
                   </label>
+                  <p id="maskSplitHint" class="helper-text" hidden>Draw completely across the connection. The originally clicked object will be kept.</p>
                 </div>
 
                 <div id="backgroundToleranceControl" class="conditional-control" hidden>

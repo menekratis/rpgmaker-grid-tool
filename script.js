@@ -72,8 +72,10 @@ const elements = {
   maskRedrawButton: document.querySelector("#maskRedrawButton"),
   maskEraseButton: document.querySelector("#maskEraseButton"),
   maskRestoreButton: document.querySelector("#maskRestoreButton"),
+  maskSplitButton: document.querySelector("#maskSplitButton"),
   maskBackgroundButton: document.querySelector("#maskBackgroundButton"),
   brushSizeControl: document.querySelector("#brushSizeControl"),
+  maskSplitHint: document.querySelector("#maskSplitHint"),
   backgroundToleranceControl: document.querySelector("#backgroundToleranceControl"),
   maskBrushSize: document.querySelector("#maskBrushSize"),
   maskBrushSizeValue: document.querySelector("#maskBrushSizeValue"),
@@ -182,6 +184,7 @@ const captureState = {
   drawPoints: [],
   previewBounds: null,
   selectionBounds: null,
+  selectionAnchor: null,
   maskCanvas: null,
   baseMaskCanvas: null,
   maskHistory: [],
@@ -1363,6 +1366,7 @@ function resetCaptureMask() {
   captureState.baseMaskCanvas = null;
   captureState.maskHistory = [];
   captureState.selectionBounds = null;
+  captureState.selectionAnchor = null;
   captureState.previewBounds = null;
   captureState.drawStart = null;
   captureState.drawPoints = [];
@@ -1400,8 +1404,9 @@ function setCaptureMode(mode) {
 }
 
 function setMaskTool(tool) {
-  if (!["draw", "erase", "restore", "background"].includes(tool)) return;
+  if (!["draw", "erase", "restore", "split", "background"].includes(tool)) return;
   if (tool !== "draw" && !captureState.maskCanvas) return;
+  if (tool === "split" && !captureState.selectionAnchor) return;
   captureState.tool = tool;
   captureState.hoverPoint = null;
   updateCaptureUi();
@@ -1414,9 +1419,13 @@ function pushMaskHistory() {
     maskCanvas: cloneCanvas(captureState.maskCanvas),
     baseMaskCanvas: cloneCanvas(captureState.baseMaskCanvas),
     selectionBounds: captureState.selectionBounds ? { ...captureState.selectionBounds } : null,
+    selectionAnchor: captureState.selectionAnchor ? { ...captureState.selectionAnchor } : null,
+    columns: captureState.columns,
+    rows: captureState.rows,
     scale: captureState.scale,
     offsetX: captureState.offsetX,
     offsetY: captureState.offsetY,
+    previewZoom: captureState.previewZoom,
     placementMode: elements.capturePlacementMode.value,
   });
   if (captureState.maskHistory.length > 8) captureState.maskHistory.shift();
@@ -1428,10 +1437,17 @@ function undoMaskEdit() {
   captureState.maskCanvas = previous.maskCanvas;
   captureState.baseMaskCanvas = previous.baseMaskCanvas;
   captureState.selectionBounds = previous.selectionBounds;
+  captureState.selectionAnchor = previous.selectionAnchor;
+  captureState.columns = previous.columns;
+  captureState.rows = previous.rows;
   captureState.scale = previous.scale;
   captureState.offsetX = previous.offsetX;
   captureState.offsetY = previous.offsetY;
+  captureState.previewZoom = previous.previewZoom;
+  elements.captureColumns.value = String(previous.columns);
+  elements.captureRows.value = String(previous.rows);
   elements.capturePlacementMode.value = previous.placementMode;
+  snapBuilderDestinationForFootprint(previous.columns, previous.rows);
   updateCaptureUi();
   renderPreview();
 }
@@ -1630,6 +1646,7 @@ function smartSelectObject(seed, { add = false, subtract = false } = {}) {
     captureState.maskCanvas = null;
     captureState.baseMaskCanvas = null;
     captureState.selectionBounds = null;
+    captureState.selectionAnchor = null;
     updateCaptureUi();
     renderPreview();
     showToast("The selected piece was removed. Undo Mask restores it.");
@@ -1639,6 +1656,9 @@ function smartSelectObject(seed, { add = false, subtract = false } = {}) {
   captureState.maskCanvas = mask;
   captureState.baseMaskCanvas = cloneCanvas(mask);
   captureState.selectionBounds = bounds;
+  if ((!add && !subtract) || !captureState.selectionAnchor) {
+    captureState.selectionAnchor = { x: visibleSeed.x, y: visibleSeed.y };
+  }
   const recommendation = applyRecommendedCaptureFootprint(bounds);
   elements.capturePlacementMode.value = "fit";
   applyCapturePlacementMode("fit", { announce: false });
@@ -1662,6 +1682,7 @@ function finalizeMaskSelection() {
     if (!bounds || bounds.width < 2 || bounds.height < 2) return false;
     context.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
     captureState.selectionBounds = { ...bounds };
+    captureState.selectionAnchor = null;
   } else {
     if (captureState.drawPoints.length < 3) return false;
     context.beginPath();
@@ -1670,6 +1691,7 @@ function finalizeMaskSelection() {
     context.closePath();
     context.fill();
     captureState.selectionBounds = getPointBounds(captureState.drawPoints);
+    captureState.selectionAnchor = null;
   }
 
   captureState.maskCanvas = mask;
@@ -1692,11 +1714,11 @@ function finalizeMaskSelection() {
 }
 
 function drawMaskBrush(point) {
-  if (!captureState.maskCanvas || !["erase", "restore"].includes(captureState.tool)) return;
+  if (!captureState.maskCanvas || !["erase", "restore", "split"].includes(captureState.tool)) return;
   const context = captureState.maskCanvas.getContext("2d");
   const size = Number(elements.maskBrushSize.value);
   context.save();
-  context.globalCompositeOperation = captureState.tool === "erase" ? "destination-out" : "source-over";
+  context.globalCompositeOperation = ["erase", "split"].includes(captureState.tool) ? "destination-out" : "source-over";
   context.strokeStyle = "#fff";
   context.fillStyle = "#fff";
   context.lineWidth = size;
@@ -1714,6 +1736,101 @@ function drawMaskBrush(point) {
   }
   context.restore();
   captureState.brushLastPoint = point;
+}
+
+function findNearestSelectedMaskPixel(pixels, width, height, point, maximumRadius) {
+  const centerX = Math.max(0, Math.min(width - 1, Math.round(point.x)));
+  const centerY = Math.max(0, Math.min(height - 1, Math.round(point.y)));
+  for (let radius = 0; radius <= maximumRadius; radius += 1) {
+    const left = Math.max(0, centerX - radius);
+    const right = Math.min(width - 1, centerX + radius);
+    const top = Math.max(0, centerY - radius);
+    const bottom = Math.min(height - 1, centerY + radius);
+    for (let x = left; x <= right; x += 1) {
+      if (pixels[(top * width + x) * 4 + 3]) return top * width + x;
+      if (pixels[(bottom * width + x) * 4 + 3]) return bottom * width + x;
+    }
+    for (let y = top + 1; y < bottom; y += 1) {
+      if (pixels[(y * width + left) * 4 + 3]) return y * width + left;
+      if (pixels[(y * width + right) * 4 + 3]) return y * width + right;
+    }
+  }
+  return -1;
+}
+
+function finishObjectSplit() {
+  if (!captureState.maskCanvas || !captureState.selectionAnchor) return;
+  const canvas = captureState.maskCanvas;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const total = canvas.width * canvas.height;
+  const maximumRadius = Math.max(32, Number(elements.maskBrushSize.value));
+  const seedIndex = findNearestSelectedMaskPixel(
+    image.data,
+    canvas.width,
+    canvas.height,
+    captureState.selectionAnchor,
+    maximumRadius,
+  );
+  if (seedIndex < 0) {
+    undoMaskEdit();
+    showToast("The cut crossed the originally clicked object. The mask was restored; try a line farther from it.", true);
+    return;
+  }
+
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+  queue[tail++] = seedIndex;
+  visited[seedIndex] = 1;
+  while (head < tail) {
+    const pixelIndex = queue[head++];
+    const x = pixelIndex % canvas.width;
+    const y = Math.floor(pixelIndex / canvas.width);
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        if (!offsetX && !offsetY) continue;
+        const nextX = x + offsetX;
+        const nextY = y + offsetY;
+        if (nextX < 0 || nextX >= canvas.width || nextY < 0 || nextY >= canvas.height) continue;
+        const nextIndex = nextY * canvas.width + nextX;
+        if (visited[nextIndex] || !image.data[nextIndex * 4 + 3]) continue;
+        visited[nextIndex] = 1;
+        queue[tail++] = nextIndex;
+      }
+    }
+  }
+
+  let removedPixels = 0;
+  for (let index = 0; index < total; index += 1) {
+    const alphaIndex = index * 4 + 3;
+    if (!image.data[alphaIndex] || visited[index]) continue;
+    image.data[alphaIndex] = 0;
+    removedPixels += 1;
+  }
+  context.putImageData(image, 0, 0);
+  if (!removedPixels) {
+    updateCaptureUi();
+    renderPreview();
+    showToast("The line did not fully separate the objects. Continue the cut across the remaining connection, or undo it.", true);
+    return;
+  }
+
+  const bounds = getMaskContentBounds(canvas);
+  if (!bounds) {
+    undoMaskEdit();
+    showToast("The split removed the complete selection, so the mask was restored.", true);
+    return;
+  }
+  captureState.selectionBounds = bounds;
+  const recommendation = applyRecommendedCaptureFootprint(bounds);
+  elements.capturePlacementMode.value = "fit";
+  applyCapturePlacementMode("fit", { announce: false });
+  showToast(
+    `Objects separated. Kept the originally clicked object and removed ${removedPixels.toLocaleString()} disconnected pixels. ` +
+    `Recommended size is now ${recommendation.columns}\u00D7${recommendation.rows} tiles.`,
+  );
 }
 
 function removeConnectedBackground(seed) {
@@ -1974,16 +2091,17 @@ function drawCaptureOverlay(context) {
       context.lineWidth = 2;
       context.stroke();
     }
-    if (captureState.hoverPoint && ["erase", "restore"].includes(captureState.tool)) {
+    if (captureState.hoverPoint && ["erase", "restore", "split"].includes(captureState.tool)) {
       const radius = Number(elements.maskBrushSize.value) / 2;
       context.beginPath();
       context.arc(captureState.hoverPoint.x, captureState.hoverPoint.y, radius, 0, Math.PI * 2);
-      context.fillStyle = captureState.tool === "erase" ? "rgba(255, 73, 106, .16)" : "rgba(81, 216, 154, .16)";
+      context.fillStyle = ["erase", "split"].includes(captureState.tool)
+        ? "rgba(255, 73, 106, .16)" : "rgba(81, 216, 154, .16)";
       context.fill();
       context.strokeStyle = "rgba(5, 8, 12, .92)";
       context.lineWidth = 4;
       context.stroke();
-      context.strokeStyle = captureState.tool === "erase" ? "#ff91a4" : "#75e5b0";
+      context.strokeStyle = ["erase", "split"].includes(captureState.tool) ? "#ff91a4" : "#75e5b0";
       context.lineWidth = 2;
       context.stroke();
     }
@@ -2299,6 +2417,7 @@ function updateCaptureUi() {
   [elements.maskEraseButton, elements.maskRestoreButton, elements.maskBackgroundButton].forEach((button) => {
     button.disabled = !hasMask;
   });
+  elements.maskSplitButton.disabled = !hasMask || !captureState.selectionAnchor;
   elements.maskUndoButton.disabled = !captureState.maskHistory.length;
   elements.maskResetButton.disabled = !captureState.baseMaskCanvas;
   elements.maskClearSelectionButton.disabled = !hasMask;
@@ -2306,9 +2425,11 @@ function updateCaptureUi() {
     [elements.maskRedrawButton, "draw"],
     [elements.maskEraseButton, "erase"],
     [elements.maskRestoreButton, "restore"],
+    [elements.maskSplitButton, "split"],
     [elements.maskBackgroundButton, "background"],
   ].forEach(([button, tool]) => button.classList.toggle("is-active", captureState.tool === tool));
-  elements.brushSizeControl.hidden = !["erase", "restore"].includes(captureState.tool) || !hasMask;
+  elements.brushSizeControl.hidden = !["erase", "restore", "split"].includes(captureState.tool) || !hasMask;
+  elements.maskSplitHint.hidden = captureState.tool !== "split" || !hasMask;
   elements.backgroundToleranceControl.hidden = captureState.tool !== "background" || !hasMask;
   elements.maskBrushSizeValue.textContent = elements.maskBrushSize.value + " px";
   elements.maskToleranceValue.textContent = elements.maskTolerance.value;
@@ -2320,7 +2441,7 @@ function updateCaptureUi() {
     ? elements.maskFeather.value + " px"
     : "Hard edge";
   elements.mapCanvas.classList.toggle("is-mask-drawing", captureState.enabled && isMaskCaptureMode() && captureState.tool === "draw");
-  elements.mapCanvas.classList.toggle("is-mask-brushing", captureState.enabled && isMaskCaptureMode() && ["erase", "restore"].includes(captureState.tool));
+  elements.mapCanvas.classList.toggle("is-mask-brushing", captureState.enabled && isMaskCaptureMode() && ["erase", "restore", "split"].includes(captureState.tool));
 
   if (!state.image) return;
   const scalePercent = Math.round(captureState.scale * 100);
@@ -2462,6 +2583,7 @@ function finishCaptureDrag(event) {
     if (captureState.tool === "draw" && !finalizeMaskSelection()) {
       showToast("Draw a larger selection around the object.", true);
     }
+    if (captureState.tool === "split") finishObjectSplit();
     captureState.brushLastPoint = null;
   }
   elements.mapCanvas.classList.remove("is-capture-dragging");
@@ -3218,6 +3340,7 @@ elements.captureLassoModeButton.addEventListener("click", () => setCaptureMode("
 elements.maskRedrawButton.addEventListener("click", () => setMaskTool("draw"));
 elements.maskEraseButton.addEventListener("click", () => setMaskTool("erase"));
 elements.maskRestoreButton.addEventListener("click", () => setMaskTool("restore"));
+elements.maskSplitButton.addEventListener("click", () => setMaskTool("split"));
 elements.maskBackgroundButton.addEventListener("click", () => setMaskTool("background"));
 elements.maskBrushSize.addEventListener("input", updateCaptureUi);
 elements.maskTolerance.addEventListener("input", updateCaptureUi);
