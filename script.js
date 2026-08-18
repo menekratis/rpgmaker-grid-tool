@@ -298,7 +298,7 @@ function initializeCollapsibleSections() {
     while (heading.nextSibling) body.append(heading.nextSibling);
     section.append(body);
 
-    const startsOpen = ["grid-settings", "image-details"].includes(section.dataset.collapsible);
+    const startsOpen = ["grid-selection", "image-details"].includes(section.dataset.collapsible);
     const collapsed = getSavedSectionCollapsed(section.dataset.collapsible, !startsOpen);
     setSectionCollapsed(section, collapsed, { persist: false });
     button.addEventListener("click", () => setSectionCollapsed(section, !section.classList.contains("is-collapsed")));

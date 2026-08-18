@@ -64,9 +64,14 @@
             <p id="autoFitImageHint" class="helper-text">Padding and small crops are preferred so the artwork stays sharp.</p>
           </section>
 
-          <section class="panel-section" data-collapsible="grid-settings" aria-labelledby="gridSettingsHeading">
+          <section class="panel-section selection-section" data-collapsible="grid-selection" aria-labelledby="gridSelectionHeading">
             <div class="section-heading">
-              <h2 id="gridSettingsHeading">Grid settings</h2>
+              <h2 id="gridSelectionHeading">Grid &amp; tile selection</h2>
+              <span id="selectedTileCount" class="selection-count">0</span>
+            </div>
+
+            <div class="control-subheading">
+              <strong>Grid settings</strong>
               <label class="switch-label" for="gridToggle">
                 <span>Show</span>
                 <input id="gridToggle" type="checkbox" checked />
@@ -115,12 +120,10 @@
               <input id="showPixelCoordinates" type="checkbox" />
               <span>Show pixel coordinates on hover</span>
             </label>
-          </section>
 
-          <section class="panel-section selection-section" data-collapsible="tile-selection" aria-labelledby="tileSelectionHeading">
-            <div class="section-heading">
-              <h2 id="tileSelectionHeading">Tile selection</h2>
-              <span id="selectedTileCount" class="selection-count">0</span>
+            <div class="control-divider" aria-hidden="true"></div>
+            <div class="control-subheading">
+              <strong>Tile selection</strong>
             </div>
             <button id="selectionToggleButton" class="button button-secondary button-wide" type="button" disabled>
               Enable tile selection

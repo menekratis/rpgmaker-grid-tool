@@ -251,6 +251,28 @@ h2 {
   display: none;
 }
 
+.control-subheading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 11px;
+  color: var(--text-soft);
+  font-size: 0.68rem;
+}
+
+.control-subheading strong {
+  font-size: inherit;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.control-divider {
+  height: 1px;
+  margin: 16px -2px 14px;
+  background: var(--border);
+}
+
 .panel-section.is-collapsed .section-heading {
   margin-bottom: 0;
 }
