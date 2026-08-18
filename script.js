@@ -2,6 +2,7 @@
 
 const MZ_TILE_SIZE = 48;
 const RPG_MAKER_PALETTE_COLUMNS = 8;
+const CAPTURE_BOTTOM_MARGIN = 4;
 const TILESET_TEMPLATE_PATH = "assets/grid-template-tileset-b.png";
 
 const elements = {
@@ -1620,7 +1621,7 @@ function smartSelectObject(seed, { add = false, subtract = false } = {}) {
   applyCapturePlacementMode("fit", { announce: false });
   const action = subtract ? "removed" : add ? "added" : "selected";
   showToast(
-    `Object ${action}. Recommended ${recommendation.columns}×${recommendation.rows} tiles. ` +
+    `Object ${action}. Recommended ${recommendation.columns}×${recommendation.rows} tiles, placed near the bottom. ` +
     "Shift-click adds another piece; Alt-click removes one.",
   );
 }
@@ -1661,7 +1662,7 @@ function finalizeMaskSelection() {
   applyCapturePlacementMode("fit", { announce: false });
   setMaskTool("erase");
   showToast(
-    `Object selected. Recommended ${recommendation.columns}×${recommendation.rows} tiles. ` +
+    `Object selected. Recommended ${recommendation.columns}×${recommendation.rows} tiles, placed near the bottom. ` +
     "You can change the tile size before placing it.",
   );
   return true;
@@ -1830,9 +1831,19 @@ function applyCapturePlacementMode(mode, { announce = true } = {}) {
   else captureState.scale = Math.min(insetWidth / bounds.width, insetHeight / bounds.height);
   captureState.offsetX = 0;
   captureState.offsetY = 0;
+  if (mode === "fit") {
+    const drawHeight = bounds.height * captureState.scale;
+    const centeredBottomSpace = Math.max(0, (output.height - drawHeight) / 2);
+    captureState.offsetY = Math.max(0, centeredBottomSpace - CAPTURE_BOTTOM_MARGIN);
+  }
   updateCaptureUi();
   renderPreview();
-  if (announce) showToast(mode === "fit" ? "Object fitted to the selected tile area." : "Object placement updated.");
+  if (announce) {
+    const message = mode === "fit"
+      ? "Object fitted near the bottom with a small margin."
+      : mode === "fit-center" ? "Object fitted and centered." : "Object placement updated.";
+    showToast(message);
+  }
 }
 
 function autoFitObjectToTiles() {
