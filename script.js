@@ -3,6 +3,8 @@
 const MZ_TILE_SIZE = 48;
 const RPG_MAKER_PALETTE_COLUMNS = 8;
 const CAPTURE_BOTTOM_MARGIN = 4;
+const CAPTURE_PREVIEW_MIN_ZOOM = .25;
+const CAPTURE_PREVIEW_MAX_ZOOM = 8;
 const TILESET_TEMPLATE_PATH = "assets/grid-template-tileset-b.png";
 
 const elements = {
@@ -99,6 +101,7 @@ const elements = {
   previewZoomOutButton: document.querySelector("#previewZoomOutButton"),
   previewZoomInButton: document.querySelector("#previewZoomInButton"),
   previewZoomValue: document.querySelector("#previewZoomValue"),
+  capturePreviewWrap: document.querySelector("#capturePreviewWrap"),
   capturePreviewCanvas: document.querySelector("#capturePreviewCanvas"),
   captureQualityNotice: document.querySelector("#captureQualityNotice"),
   captureResetButton: document.querySelector("#captureResetButton"),
@@ -1253,6 +1256,20 @@ function getCaptureOutputSize() {
   };
 }
 
+function getAutomaticCapturePreviewZoom() {
+  const output = getCaptureOutputSize();
+  const wrapWidth = elements.capturePreviewWrap?.clientWidth || 300;
+  const availableWidth = Math.max(120, wrapWidth - 22);
+  const availableHeight = 300;
+  const fittedZoom = Math.min(availableWidth / output.width, availableHeight / output.height);
+  const roundedDown = Math.floor(fittedZoom * 20) / 20;
+  return Math.min(CAPTURE_PREVIEW_MAX_ZOOM, Math.max(CAPTURE_PREVIEW_MIN_ZOOM, roundedDown));
+}
+
+function autoZoomCapturePreview() {
+  captureState.previewZoom = getAutomaticCapturePreviewZoom();
+}
+
 function isMaskCaptureMode() {
   return ["smart", "rectangle", "lasso"].includes(captureState.mode);
 }
@@ -1469,6 +1486,7 @@ function applyRecommendedCaptureFootprint(bounds) {
   elements.captureColumns.value = String(recommendation.columns);
   elements.captureRows.value = String(recommendation.rows);
   snapBuilderDestinationForFootprint(recommendation.columns, recommendation.rows);
+  autoZoomCapturePreview();
   return recommendation;
 }
 
@@ -1892,6 +1910,7 @@ function updateCaptureDimensions() {
   elements.captureColumns.value = captureState.columns;
   elements.captureRows.value = captureState.rows;
   snapBuilderDestinationForFootprint(captureState.columns, captureState.rows, { announce: true });
+  autoZoomCapturePreview();
   if (isMaskCaptureMode() && captureState.selectionBounds) {
     applyCapturePlacementMode(elements.capturePlacementMode.value, { announce: false });
     return;
@@ -1912,6 +1931,7 @@ function previewCaptureDimensions() {
   captureState.columns = columns;
   captureState.rows = rows;
   snapBuilderDestinationForFootprint(columns, rows);
+  autoZoomCapturePreview();
   if (isMaskCaptureMode() && captureState.selectionBounds) {
     applyCapturePlacementMode(elements.capturePlacementMode.value, { announce: false });
     return;
@@ -2210,15 +2230,19 @@ function renderCapturedRegion() {
 }
 
 function setCapturePreviewZoom(nextZoom) {
-  captureState.previewZoom = Math.min(8, Math.max(1, nextZoom));
+  captureState.previewZoom = Math.min(CAPTURE_PREVIEW_MAX_ZOOM, Math.max(CAPTURE_PREVIEW_MIN_ZOOM, nextZoom));
   renderCapturePreview();
 }
 
 function updateCapturePreviewZoomUi() {
   const percent = Math.round(captureState.previewZoom * 100);
   elements.previewZoomValue.textContent = percent + "%";
-  elements.previewZoomOutButton.disabled = captureState.previewZoom <= 1;
-  elements.previewZoomInButton.disabled = captureState.previewZoom >= 8;
+  elements.previewZoomOutButton.disabled = captureState.previewZoom <= CAPTURE_PREVIEW_MIN_ZOOM;
+  elements.previewZoomInButton.disabled = captureState.previewZoom >= CAPTURE_PREVIEW_MAX_ZOOM;
+}
+
+function getCapturePreviewZoomStep() {
+  return captureState.previewZoom < 2 ? .25 : .5;
 }
 
 function renderCapturePreview() {
@@ -3228,8 +3252,8 @@ elements.pixelHardAlpha.addEventListener("change", () => {
 });
 elements.snapPixelScaleButton.addEventListener("click", snapPixelArtScale);
 elements.captureScale.addEventListener("input", () => setCaptureScale(Number(elements.captureScale.value) / 100));
-elements.previewZoomOutButton.addEventListener("click", () => setCapturePreviewZoom(captureState.previewZoom - .5));
-elements.previewZoomInButton.addEventListener("click", () => setCapturePreviewZoom(captureState.previewZoom + .5));
+elements.previewZoomOutButton.addEventListener("click", () => setCapturePreviewZoom(captureState.previewZoom - getCapturePreviewZoomStep()));
+elements.previewZoomInButton.addEventListener("click", () => setCapturePreviewZoom(captureState.previewZoom + getCapturePreviewZoomStep()));
 elements.captureResetButton.addEventListener("click", resetCapturePosition);
 elements.capturePlaceSelectedButton.addEventListener("click", placeCaptureAtSelectedDestination);
 elements.captureAddNextButton.addEventListener("click", addCaptureToNextEmptyRegion);
