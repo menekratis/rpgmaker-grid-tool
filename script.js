@@ -89,6 +89,11 @@ const elements = {
   capturePlacementMode: document.querySelector("#capturePlacementMode"),
   autoFitObjectButton: document.querySelector("#autoFitObjectButton"),
   captureResizeMethod: document.querySelector("#captureResizeMethod"),
+  pixelArtControls: document.querySelector("#pixelArtControls"),
+  pixelAlignToGrid: document.querySelector("#pixelAlignToGrid"),
+  pixelHardAlpha: document.querySelector("#pixelHardAlpha"),
+  snapPixelScaleButton: document.querySelector("#snapPixelScaleButton"),
+  pixelArtMethodHint: document.querySelector("#pixelArtMethodHint"),
   captureScale: document.querySelector("#captureScale"),
   captureScaleValue: document.querySelector("#captureScaleValue"),
   previewZoomOutButton: document.querySelector("#previewZoomOutButton"),
@@ -1852,6 +1857,35 @@ function autoFitObjectToTiles() {
   applyCapturePlacementMode("fit");
 }
 
+function isPixelArtResize() {
+  return elements.captureResizeMethod.value.startsWith("pixel-art");
+}
+
+function snapPixelArtScale() {
+  if (!isMaskCaptureMode() || !captureState.selectionBounds) return;
+  const output = getCaptureOutputSize();
+  const bounds = captureState.selectionBounds;
+  const maximumFit = Math.min(
+    Math.max(1, output.width - 4) / bounds.width,
+    Math.max(1, output.height - 4) / bounds.height,
+  );
+  const cleanScales = [1 / 8, 1 / 6, 1 / 4, 1 / 3, 1 / 2, 1, 2, 3, 4, 5, 6, 7, 8];
+  const fittingScales = cleanScales.filter((scale) => scale <= maximumFit + .0001);
+  const nextScale = fittingScales.length
+    ? fittingScales.reduce((best, scale) => (
+      Math.abs(Math.log(scale / captureState.scale)) < Math.abs(Math.log(best / captureState.scale)) ? scale : best
+    ))
+    : maximumFit;
+  captureState.scale = nextScale;
+  captureState.offsetX = 0;
+  const drawHeight = bounds.height * nextScale;
+  captureState.offsetY = Math.max(0, (output.height - drawHeight) / 2 - CAPTURE_BOTTOM_MARGIN);
+  elements.capturePlacementMode.value = "fit";
+  updateCaptureUi();
+  renderPreview();
+  showToast(`Pixel scale snapped to ${Math.round(nextScale * 10000) / 100}%.`);
+}
+
 function updateCaptureDimensions() {
   captureState.columns = clampInteger(elements.captureColumns.value, 1, 16, 1);
   captureState.rows = clampInteger(elements.captureRows.value, 1, 16, 1);
@@ -2009,12 +2043,113 @@ function drawHighQualityRegion(context, image, sourceRect, outputWidth, outputHe
   context.drawImage(working, 0, 0, working.width, working.height, 0, 0, outputWidth, outputHeight);
 }
 
+function copyWithHardAlpha(source) {
+  if (!elements.pixelHardAlpha.checked) return source;
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(source, 0, 0);
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let index = 3; index < image.data.length; index += 4) {
+    image.data[index] = image.data[index] >= 128 ? 255 : 0;
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
+function rgbaPixelsMatch(data, first, second) {
+  const a = first * 4;
+  const b = second * 4;
+  if (data[a + 3] === 0 && data[b + 3] === 0) return true;
+  return data[a] === data[b] && data[a + 1] === data[b + 1] &&
+    data[a + 2] === data[b + 2] && data[a + 3] === data[b + 3];
+}
+
+function copyRgbaPixel(source, sourcePixel, destination, destinationPixel) {
+  const from = sourcePixel * 4;
+  const to = destinationPixel * 4;
+  destination[to] = source[from];
+  destination[to + 1] = source[from + 1];
+  destination[to + 2] = source[from + 2];
+  destination[to + 3] = source[from + 3];
+}
+
+// Scale2x rounds diagonal pixel-art corners using only colors already present
+// in the source. It therefore improves large pixel-art edges without blur or
+// inventing a new palette.
+function scalePixelArt2x(source) {
+  const sourceContext = source.getContext("2d", { willReadFrequently: true });
+  const sourceImage = sourceContext.getImageData(0, 0, source.width, source.height);
+  const output = document.createElement("canvas");
+  output.width = source.width * 2;
+  output.height = source.height * 2;
+  const outputContext = output.getContext("2d", { willReadFrequently: true });
+  const outputImage = outputContext.createImageData(output.width, output.height);
+  const data = sourceImage.data;
+
+  for (let y = 0; y < source.height; y += 1) {
+    for (let x = 0; x < source.width; x += 1) {
+      const center = y * source.width + x;
+      const above = Math.max(0, y - 1) * source.width + x;
+      const below = Math.min(source.height - 1, y + 1) * source.width + x;
+      const left = y * source.width + Math.max(0, x - 1);
+      const right = y * source.width + Math.min(source.width - 1, x + 1);
+      const aboveBelowDiffer = !rgbaPixelsMatch(data, above, below);
+      const leftRightDiffer = !rgbaPixelsMatch(data, left, right);
+      const topLeft = rgbaPixelsMatch(data, left, above) && aboveBelowDiffer && leftRightDiffer ? left : center;
+      const topRight = rgbaPixelsMatch(data, above, right) && aboveBelowDiffer && leftRightDiffer ? right : center;
+      const bottomLeft = rgbaPixelsMatch(data, left, below) && aboveBelowDiffer && leftRightDiffer ? left : center;
+      const bottomRight = rgbaPixelsMatch(data, below, right) && aboveBelowDiffer && leftRightDiffer ? right : center;
+      const outputX = x * 2;
+      const outputY = y * 2;
+      copyRgbaPixel(data, topLeft, outputImage.data, outputY * output.width + outputX);
+      copyRgbaPixel(data, topRight, outputImage.data, outputY * output.width + outputX + 1);
+      copyRgbaPixel(data, bottomLeft, outputImage.data, (outputY + 1) * output.width + outputX);
+      copyRgbaPixel(data, bottomRight, outputImage.data, (outputY + 1) * output.width + outputX + 1);
+    }
+  }
+  outputContext.putImageData(outputImage, 0, 0);
+  return output;
+}
+
+function preparePixelArtSource(source, targetWidth, targetHeight) {
+  let prepared = copyWithHardAlpha(source);
+  if (elements.captureResizeMethod.value !== "pixel-art-enhanced") return prepared;
+  let passes = 0;
+  while ((prepared.width < targetWidth || prepared.height < targetHeight) && passes < 3) {
+    prepared = scalePixelArt2x(prepared);
+    passes += 1;
+  }
+  return prepared;
+}
+
+function createPixelArtRegion(image, sourceRect) {
+  const crop = document.createElement("canvas");
+  crop.width = Math.max(1, Math.round(sourceRect.width));
+  crop.height = Math.max(1, Math.round(sourceRect.height));
+  const context = crop.getContext("2d");
+  context.imageSmoothingEnabled = false;
+  context.drawImage(
+    image,
+    sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height,
+    0, 0, crop.width, crop.height,
+  );
+  return crop;
+}
+
 function drawScaledObject(context, object, x, y, width, height) {
   const targetWidth = Math.max(1, Math.round(width));
   const targetHeight = Math.max(1, Math.round(height));
-  if (elements.captureResizeMethod.value === "pixel-art") {
+  if (isPixelArtResize()) {
+    const align = elements.pixelAlignToGrid.checked;
+    const drawX = align ? Math.round(x) : x;
+    const drawY = align ? Math.round(y) : y;
+    const drawWidth = align ? targetWidth : width;
+    const drawHeight = align ? targetHeight : height;
+    const prepared = preparePixelArtSource(object, targetWidth, targetHeight);
     context.imageSmoothingEnabled = false;
-    context.drawImage(object, x, y, width, height);
+    context.drawImage(prepared, drawX, drawY, drawWidth, drawHeight);
     return;
   }
   const resized = document.createElement("canvas");
@@ -2056,13 +2191,17 @@ function renderCapturedRegion() {
 
   const sourceRect = getCaptureRect();
 
-  if (elements.captureResizeMethod.value === "pixel-art") {
+  if (isPixelArtResize()) {
+    const alignedRect = elements.pixelAlignToGrid.checked ? {
+      x: Math.round(sourceRect.x),
+      y: Math.round(sourceRect.y),
+      width: Math.max(1, Math.round(sourceRect.width)),
+      height: Math.max(1, Math.round(sourceRect.height)),
+    } : sourceRect;
+    const crop = createPixelArtRegion(getActiveSource(), alignedRect);
+    const prepared = preparePixelArtSource(crop, output.width, output.height);
     context.imageSmoothingEnabled = false;
-    context.drawImage(
-      getActiveSource(),
-      sourceRect.x, sourceRect.y, sourceRect.width, sourceRect.height,
-      0, 0, output.width, output.height,
-    );
+    context.drawImage(prepared, 0, 0, output.width, output.height);
   } else {
     drawHighQualityRegion(context, getActiveSource(), sourceRect, output.width, output.height);
   }
@@ -2089,12 +2228,12 @@ function renderCapturePreview() {
   preview.width = captured.width;
   preview.height = captured.height;
   const context = preview.getContext("2d");
-  context.imageSmoothingEnabled = elements.captureResizeMethod.value !== "pixel-art";
+  context.imageSmoothingEnabled = !isPixelArtResize();
   context.imageSmoothingQuality = "high";
   context.drawImage(captured, 0, 0);
   preview.style.width = Math.round(captured.width * captureState.previewZoom) + "px";
   preview.style.height = Math.round(captured.height * captureState.previewZoom) + "px";
-  preview.classList.toggle("is-pixel-art", elements.captureResizeMethod.value === "pixel-art");
+  preview.classList.toggle("is-pixel-art", isPixelArtResize());
   updateCapturePreviewZoomUi();
 }
 
@@ -2114,6 +2253,12 @@ function updateCaptureUi() {
   elements.captureAddNextButton.disabled = !captureState.enabled || !objectReady || !builderState.templateImage;
   elements.autoFitObjectButton.disabled = !isMaskCaptureMode() || !captureState.selectionBounds;
   elements.capturePlacementMode.disabled = !isMaskCaptureMode() || !captureState.selectionBounds;
+  const pixelArtEnabled = isPixelArtResize();
+  elements.pixelArtControls.hidden = !pixelArtEnabled;
+  elements.snapPixelScaleButton.disabled = !pixelArtEnabled || !isMaskCaptureMode() || !captureState.selectionBounds;
+  elements.pixelArtMethodHint.textContent = elements.captureResizeMethod.value === "pixel-art-enhanced"
+    ? "Scale2x improves enlarged diagonal edges while keeping the original palette. Reductions still use crisp nearest-neighbor resizing."
+    : "Nearest-neighbor resizing preserves every source pixel without smoothing.";
   elements.captureFrameModeButton.classList.toggle("is-active", captureState.mode === "frame");
   elements.captureSmartModeButton.classList.toggle("is-active", captureState.mode === "smart");
   elements.captureRectangleModeButton.classList.toggle("is-active", captureState.mode === "rectangle");
@@ -2156,7 +2301,13 @@ function updateCaptureUi() {
   if (!state.image) return;
   const scalePercent = Math.round(captureState.scale * 100);
   let quality;
-  if (captureState.scale > 2) quality = "Strong enlargement; blur may be visible.";
+  if (isPixelArtResize()) {
+    if (captureState.scale > 1.25) quality = elements.captureResizeMethod.value === "pixel-art-enhanced"
+      ? "Crisp enlargement with palette-preserving diagonal cleanup."
+      : "Crisp enlargement without smoothing.";
+    else if (captureState.scale < .35) quality = "Heavy pixel reduction; small details may be skipped.";
+    else quality = "Pixel-art resize is within a practical range.";
+  } else if (captureState.scale > 2) quality = "Strong enlargement; blur may be visible.";
   else if (captureState.scale > 1.25) quality = "Enlargement; inspect the preview for softness.";
   else if (captureState.scale < .35) quality = "Heavy reduction; fine details may disappear.";
   else quality = "Resize amount is within a practical range.";
@@ -3067,6 +3218,15 @@ elements.captureResizeMethod.addEventListener("change", () => {
   updateCaptureUi();
   renderPreview();
 });
+elements.pixelAlignToGrid.addEventListener("change", () => {
+  updateCaptureUi();
+  renderPreview();
+});
+elements.pixelHardAlpha.addEventListener("change", () => {
+  updateCaptureUi();
+  renderPreview();
+});
+elements.snapPixelScaleButton.addEventListener("click", snapPixelArtScale);
 elements.captureScale.addEventListener("input", () => setCaptureScale(Number(elements.captureScale.value) / 100));
 elements.previewZoomOutButton.addEventListener("click", () => setCapturePreviewZoom(captureState.previewZoom - .5));
 elements.previewZoomInButton.addEventListener("click", () => setCapturePreviewZoom(captureState.previewZoom + .5));

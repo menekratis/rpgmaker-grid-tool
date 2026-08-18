@@ -260,9 +260,25 @@
                 <span>Resize method</span>
                 <select id="captureResizeMethod">
                   <option value="artwork">Artwork</option>
-                  <option value="pixel-art">Pixel art</option>
+                  <option value="pixel-art">Pixel art (crisp)</option>
+                  <option value="pixel-art-enhanced">Pixel art (enhanced edges)</option>
                 </select>
               </label>
+
+              <div id="pixelArtControls" class="pixel-art-controls" hidden>
+                <label class="check-label" for="pixelAlignToGrid">
+                  <input id="pixelAlignToGrid" type="checkbox" checked />
+                  <span>Align size and position to whole pixels</span>
+                </label>
+                <label class="check-label" for="pixelHardAlpha">
+                  <input id="pixelHardAlpha" type="checkbox" />
+                  <span>Hard transparency edges (remove halos)</span>
+                </label>
+                <button id="snapPixelScaleButton" class="button button-secondary button-wide" type="button" disabled>
+                  Snap to Clean Scale
+                </button>
+                <p id="pixelArtMethodHint" class="helper-text">Nearest-neighbor resizing preserves every source pixel without smoothing.</p>
+              </div>
 
               <label class="range-label" for="captureScale">
                 <span>Object scale</span>

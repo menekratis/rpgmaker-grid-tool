@@ -995,6 +995,31 @@ input[type="color"] {
   background: #0c1017;
 }
 
+.pixel-art-controls {
+  margin-top: 9px;
+  padding: 9px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(87, 212, 255, 0.035);
+}
+
+.pixel-art-controls .check-label {
+  margin-top: 0;
+  color: var(--text-soft);
+  font-size: 0.65rem;
+  line-height: 1.35;
+}
+
+.pixel-art-controls .check-label + .check-label,
+.pixel-art-controls .button {
+  margin-top: 8px;
+}
+
+.pixel-art-controls .helper-text {
+  margin-top: 7px;
+  text-align: left;
+}
+
 .capture-preview-wrap {
   display: grid;
   min-height: 150px;
