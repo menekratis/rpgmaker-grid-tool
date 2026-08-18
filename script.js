@@ -105,6 +105,7 @@ const elements = {
   previewZoomValue: document.querySelector("#previewZoomValue"),
   capturePreviewWrap: document.querySelector("#capturePreviewWrap"),
   capturePreviewCanvas: document.querySelector("#capturePreviewCanvas"),
+  capturePreviewPositionHint: document.querySelector("#capturePreviewPositionHint"),
   captureQualityNotice: document.querySelector("#captureQualityNotice"),
   captureResetButton: document.querySelector("#captureResetButton"),
   capturePlaceSelectedButton: document.querySelector("#capturePlaceSelectedButton"),
@@ -2303,6 +2304,25 @@ function drawScaledObject(context, object, x, y, width, height) {
   context.drawImage(resized, x, y, width, height);
 }
 
+function getMaskedCapturePlacement(objectWidth, objectHeight) {
+  const output = getCaptureOutputSize();
+  let width = objectWidth * captureState.scale;
+  let height = objectHeight * captureState.scale;
+  if (elements.capturePlacementMode.value === "stretch") {
+    width = output.width;
+    height = output.height;
+  }
+  let x = (output.width - width) / 2 + captureState.offsetX;
+  let y = (output.height - height) / 2 + captureState.offsetY;
+  if (isPixelArtResize() && elements.pixelAlignToGrid.checked) {
+    width = Math.max(1, Math.round(width));
+    height = Math.max(1, Math.round(height));
+    x = Math.round(x);
+    y = Math.round(y);
+  }
+  return { x, y, width, height };
+}
+
 function renderCapturedRegion() {
   const canvas = document.createElement("canvas");
   if (!state.image) return canvas;
@@ -2315,15 +2335,8 @@ function renderCapturedRegion() {
   if (isMaskCaptureMode()) {
     const object = createMaskedObjectCanvas();
     if (!object) return canvas;
-    let drawWidth = object.width * captureState.scale;
-    let drawHeight = object.height * captureState.scale;
-    if (elements.capturePlacementMode.value === "stretch") {
-      drawWidth = output.width;
-      drawHeight = output.height;
-    }
-    const x = (output.width - drawWidth) / 2 + captureState.offsetX;
-    const y = (output.height - drawHeight) / 2 + captureState.offsetY;
-    drawScaledObject(context, object, x, y, drawWidth, drawHeight);
+    const placement = getMaskedCapturePlacement(object.width, object.height);
+    drawScaledObject(context, object, placement.x, placement.y, placement.width, placement.height);
     return canvas;
   }
 
@@ -2363,6 +2376,47 @@ function getCapturePreviewZoomStep() {
   return captureState.previewZoom < 2 ? .25 : .5;
 }
 
+function formatSignedPreviewOffset(value) {
+  const rounded = Math.round(value);
+  return rounded > 0 ? "+" + rounded : String(rounded);
+}
+
+function drawCapturePlacementAxes(context) {
+  if (!captureState.previewDragging || !isMaskCaptureMode() || !captureState.selectionBounds) return;
+  const output = getCaptureOutputSize();
+  const bounds = captureState.selectionBounds;
+  const placement = getMaskedCapturePlacement(bounds.width, bounds.height);
+  const centerX = placement.x + placement.width / 2;
+  const centerY = placement.y + placement.height / 2;
+
+  context.save();
+  context.lineWidth = .75;
+  context.strokeStyle = "rgba(87, 212, 255, .95)";
+  context.setLineDash([3, 2]);
+  context.beginPath();
+  context.moveTo(centerX, 0);
+  context.lineTo(centerX, output.height);
+  context.moveTo(0, centerY);
+  context.lineTo(output.width, centerY);
+  context.stroke();
+  context.setLineDash([]);
+  context.fillStyle = "#081019";
+  context.beginPath();
+  context.arc(centerX, centerY, 2.25, 0, Math.PI * 2);
+  context.fill();
+  context.strokeStyle = "#8be8ff";
+  context.lineWidth = .75;
+  context.beginPath();
+  context.arc(centerX, centerY, 1.5, 0, Math.PI * 2);
+  context.stroke();
+  context.restore();
+
+  const offsetX = centerX - output.width / 2;
+  const offsetY = centerY - output.height / 2;
+  elements.capturePreviewPositionHint.textContent =
+    `Center X ${Math.round(centerX)}, Y ${Math.round(centerY)} px \u00B7 Frame offset X ${formatSignedPreviewOffset(offsetX)}, Y ${formatSignedPreviewOffset(offsetY)}`;
+}
+
 function renderCapturePreview() {
   if (!state.image) return;
   const captured = renderCapturedRegion();
@@ -2373,6 +2427,8 @@ function renderCapturePreview() {
   context.imageSmoothingEnabled = !isPixelArtResize();
   context.imageSmoothingQuality = "high";
   context.drawImage(captured, 0, 0);
+  elements.capturePreviewPositionHint.textContent = "Drag the preview to position the object inside its tile area.";
+  drawCapturePlacementAxes(context);
   preview.style.width = Math.round(captured.width * captureState.previewZoom) + "px";
   preview.style.height = Math.round(captured.height * captureState.previewZoom) + "px";
   preview.classList.toggle("is-pixel-art", isPixelArtResize());
@@ -2611,6 +2667,7 @@ function beginCapturePreviewDrag(event) {
   captureState.previewStartOffsetY = captureState.offsetY;
   safelyCapturePointer(elements.capturePreviewCanvas, event.pointerId);
   event.preventDefault();
+  renderCapturePreview();
 }
 
 function moveCapturePreviewDrag(event) {
@@ -2628,6 +2685,7 @@ function finishCapturePreviewDrag(event) {
   captureState.previewPointerId = null;
   safelyReleasePointer(elements.capturePreviewCanvas, event.pointerId);
   event.preventDefault();
+  renderCapturePreview();
 }
 
 function getSourceTileFromEvent(event) {
